@@ -49,12 +49,12 @@ flowchart LR
 
 ## Data flow of one round
 
-1. The browser posts `{ faultId, decoyId?, handle? }`. The web route validates against the catalog, derives a keyed hash of the session cookie and of the IP, and calls `enqueue_round`. The RPC (security definer) enforces the 3-minute cooldown per session or IP, one queued round per session, and the queue cap, then inserts a `queued` row. A trigger publishes the row on `rounds:all`.
+1. The browser posts `{ faultId, decoyId?, handle? }`. The web route validates against the catalog, derives a keyed hash of the session cookie and of the IP, and calls `enqueue_round`. The RPC (security definer) enforces a 3-minute cooldown per session, at most 3 attacks per IP in 10 minutes, one queued round per session, and the queue cap, then inserts a `queued` row. A trigger publishes the row on `rounds:all`. After responding, the route pings the referee's URL so a machine the platform stopped starts again (`INSFORGE_NOTES.md` §M).
 2. The referee polls for the oldest queued round, marks it `injecting`, and runs each fault's `inject()`, which is a specific `npx @insforge/cli db query …` or `functions deploy …` against the victim.
 3. The probe monitor switches to 3-second cycles. The round becomes `attacked` when at least one probe listed in the fault's scope is red within 30 seconds; otherwise it is `invalid`.
 4. The healer starts. It receives the probe results as its alert and a toolset whose every tool is one CLI command run in the victim's linked directory. Every thought, tool call, tool result, diagnosis and fix is written to `events`; a trigger publishes each row on `round:<id>` and the heal log renders it live.
 5. After every tool call the oracle runs: three consecutive all-green probe cycles **and** `artifactPresent()` false for every scored fault. Probes green with an artifact still present is `artifact_present`, not healed.
-6. When the healer stops, heals, or hits its budget (25 tool calls or 5 minutes), the judge grades the last submitted diagnosis against the ground truth. The round is scored and marked `done`.
+6. When the healer stops, heals, or hits its budget (25 tool calls or 5 minutes; 10 minutes on rate-limited free-tier providers), the judge grades the last submitted diagnosis against the ground truth. The round is scored and marked `done`. A turn without a tool call gets one neutral prompt ("nothing ran; reply DONE or make the next call"). The runner sends it without consulting the oracle, so it reveals nothing, and the second such turn ends the run.
 7. Reset: every reference fix, decoy cleanup, the idempotent seed, and a final artifact check. Then the next round.
 
 ## Trust boundaries

@@ -1,7 +1,8 @@
-import { NextResponse } from 'next/server';
+import { after, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { isValidAttack } from '@/lib/catalog';
 import { controlClient } from '@/lib/control';
+import { wakeReferee } from '@/lib/referee';
 import { getOrCreateSessionId, ipHash, sessionHash } from '@/lib/session';
 
 export const runtime = 'nodejs';
@@ -76,5 +77,6 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ error: 'could not enqueue' }, { status: 502 });
   }
   const out = data as { roundId: string; position: number };
+  after(wakeReferee);
   return NextResponse.json({ roundId: out.roundId, position: out.position });
 }

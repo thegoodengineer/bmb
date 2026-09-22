@@ -155,6 +155,12 @@ There is also a **daily token cap per model** that the headers do not advertise.
 
 Per-request caps differ by model: `qwen/qwen3.8-27b` rejects any request over **7,000 input tokens per minute** with a 413, while the gpt-oss models allow 8,000. With the full SKILL.md the fixed part of every healer request (system prompt ≈ 5.2k tokens + 17 tool schemas ≈ 1.3k) left no room for history. On non-Anthropic providers H2 therefore carries a compact cut of the vendored skill: the primitives table and the six app-level recipes (≈ 1.7k tokens; fixed part ≈ 3.9k), selected by `HEALER_SKILL=full|core|compact`. A 413 falls through to the next model in the chain, and the chain is ordered 120b → 20b → qwen so the 8k-cap models are tried first. Groq also validates tool-call arguments against the tool schema and returns `400 Tool call validation failed` or `400 Parsing failed … failed_generation` when a model emits a malformed call; the referee retries once and then moves to the next model. Rounds that still fail on the provider are recorded as invalid, not as healer misses (seven early public rounds were reclassified accordingly). `compute deploy` in source mode failed once with `flyctl deploy --build-only failed (exit 1)` and succeeded on an immediate retry.
 
+### M. Compute machine lifecycle
+
+When the referee process exits repeatedly (it once crash-looped on a victim a healer had left with duplicate columns), the platform stops the machine and leaves it stopped. A later `compute deploy` updates the stopped machine in place and still reports the service as `[running]`, but `compute events <id>` shows `launch: created` followed four seconds later by `update: stopped`. No process runs, and rounds stay queued. The first HTTP request to the service URL starts it again (`[proxy] start: starting`, then `[flyd] start: started`), and so does `compute start <id>`.
+
+The referee never receives traffic on its own, because it only polls the control project. Two changes follow. The referee no longer exits on a victim it cannot repair: boot and post-crash recovery keep resetting with backoff until the probes are green. The web app's attack endpoint pings the referee's URL (`REFEREE_URL`) after every accepted attack, so a stopped machine starts when a visitor needs it.
+
 ## Decisions taken from these notes
 
 1. Develop Phases 1–7 against the cloud project `bmb-victim` (`y2z8xzxf.us-east`, created 2026-09-22). Local is optional for fast injector iteration only.

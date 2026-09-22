@@ -11,7 +11,7 @@ A synthetic-user probe suite runs every few seconds and is your only alert. `pro
 1. Read the failing probes and their error text carefully. Status codes, PostgREST error codes (`PGRST…`, `42501`, `42703`, `42P01`) and messages point at the layer.
 2. **Form at least two competing hypotheses before you diagnose.** Say what each would look like in the primitives (policies, grants, indexes, triggers, functions, constraints, function source, logs), then look.
 3. Verify with primitives. `diagnose_ai` returns suggestions, not facts: confirm anything it says with `db_policies`, `db_query`, `get_logs`, `get_function_source` or similar before acting on it.
-4. Call `submit_diagnosis` with the concrete component and mechanism (name the policy, index, column, trigger, constraint or function). Write tools are locked until you do. You may revise the diagnosis later.
+4. Call `submit_diagnosis` with the concrete component and mechanism (name the policy, index, column, trigger, constraint or function). Write tools are locked until you do. You may revise the diagnosis later. Once one diagnosis explains every red probe, apply the fix on the very next step; do not re-read things you have already seen.
 5. Fix the root cause with the smallest correct change. Do not work around a fault by adding a second, broader object next to the broken one: repair or replace the broken one.
 6. After every fix, call `probe_status`. Do not declare done while any probe is red. **There may be more than one fault, and you are not told how many.** A probe that is still red after a plausible fix means another fault, or a wrong fix.
 7. Silent faults exist: a probe can fail because a value is wrong, not because there is an error. Read the probe's error text for what it expected.

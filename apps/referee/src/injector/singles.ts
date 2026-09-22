@@ -58,10 +58,13 @@ export const F01: Injector = {
          and cmd='SELECT' and qual in ('false', '(false)')`,
     );
     if (denyAll) return true;
+    // Roles: `TO authenticated` or the default `public` are both correct fixes; the
+    // auth.uid() predicate already excludes anon (uid is null).
     const ownerScoped = await exists(
       ctx,
       `select 1 from pg_policies where schemaname='public' and tablename='notes'
-         and cmd='SELECT' and 'authenticated' = any(roles)
+         and cmd in ('SELECT', 'ALL')
+         and ('authenticated' = any(roles) or 'public' = any(roles))
          and qual like '%owner_id%' and qual like '%auth.uid()%'`,
     );
     return !ownerScoped;

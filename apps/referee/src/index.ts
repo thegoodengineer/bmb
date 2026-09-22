@@ -11,7 +11,8 @@
 import { attackerPoints, type FaultId, faultsOfTier, getFault, roundPoints } from '@bmb/shared';
 import { ControlDb, type RoundRow } from './control-db.js';
 import { loadEnv } from './env.js';
-import { anthropicJudge, judgeRound } from './judge.js';
+import { hasModelCredentials } from './healer/provider.js';
+import { judgeFromEnv, judgeRound } from './judge.js';
 import { appendMiss } from './misses.js';
 import { ProbeMonitor } from './probe-monitor.js';
 import { allGreen } from './probes.js';
@@ -19,18 +20,20 @@ import { resetVictim } from './reset.js';
 import { runRound } from './round.js';
 
 const IDLE_BEFORE_SELF_PLAY_MS = 60_000;
-const SELF_PLAY_EVERY_MS = 10 * 60_000;
+const selfPlayEveryMs = (e: { SELF_PLAY_EVERY_MIN: number }) => e.SELF_PLAY_EVERY_MIN * 60_000;
 const POLL_MS = 3000;
 
 const log = (line: string) => console.log(`${new Date().toISOString()} ${line}`);
 
 async function main(): Promise<void> {
   const env = loadEnv();
-  if (!env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
-    throw new Error('ANTHROPIC_API_KEY is required to run the healer');
+  if (!hasModelCredentials(env)) {
+    throw new Error(
+      `no model credentials for LLM_PROVIDER=${env.LLM_PROVIDER} (ANTHROPIC_API_KEY or LLM_API_KEY)`,
+    );
   }
   const control = new ControlDb(env);
-  const judge = anthropicJudge(env.JUDGE_MODEL, env.ANTHROPIC_API_KEY);
+  const judge = await judgeFromEnv(env);
 
   log('boot: abandoning stale rounds');
   const abandoned = await control.abandonStale();
@@ -78,7 +81,7 @@ async function main(): Promise<void> {
     const now = Date.now();
     if (
       now - lastActivityAt > IDLE_BEFORE_SELF_PLAY_MS &&
-      now - lastSelfPlayAt > SELF_PLAY_EVERY_MS
+      now - lastSelfPlayAt > selfPlayEveryMs(env)
     ) {
       const singles = faultsOfTier('single');
       const pick = singles[Math.floor(Math.random() * singles.length)];

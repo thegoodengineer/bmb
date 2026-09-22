@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { type Fault, type FaultId, getFault } from '@bmb/shared';
 import { z } from 'zod';
+import type { Env } from './env.js';
 import type { Diagnosis } from './healer/tools.js';
 
 /**
@@ -135,4 +136,13 @@ export function scriptedJudge(answers: boolean[]): JudgeModel {
       return { answers, evidence: answers.map((a) => (a ? 'yes' : 'no')) };
     },
   };
+}
+
+/** The judge for the configured provider (SPEC.md §2, plus the free-tier providers). */
+export async function judgeFromEnv(env: Env): Promise<JudgeModel> {
+  if (env.LLM_PROVIDER === 'anthropic') {
+    return anthropicJudge(env.JUDGE_MODEL, env.ANTHROPIC_API_KEY);
+  }
+  const { openAICompatJudge } = await import('./judge-compat.js');
+  return openAICompatJudge(env);
 }

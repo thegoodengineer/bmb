@@ -28,9 +28,10 @@ export function readPrompt(name: string): string {
 }
 
 /** SKILL.md followed by every reference file, in a stable order. */
-export function readSkillText(): string {
+export function readSkillText(includeReferences = true): string {
   const dir = path.join(PROMPTS_DIR, 'insforge-debug');
   const parts = [readFileSync(path.join(dir, 'SKILL.md'), 'utf8')];
+  if (!includeReferences) return parts.join('');
   const refs = path.join(dir, 'references');
   for (const f of readdirSync(refs).sort()) {
     parts.push(`\n\n---\n# reference: ${f}\n\n${readFileSync(path.join(refs, f), 'utf8')}`);
@@ -38,8 +39,16 @@ export function readSkillText(): string {
   return parts.join('');
 }
 
-export function buildConfig(id: HealerConfigId): HealerConfig {
+export interface BuildOptions {
+  /** Include the skill's nine reference files in H2 (~15k tokens). Default true. */
+  skillReferences?: boolean;
+  /** Wall clock per round; the benchmark default is 5 minutes. */
+  wallClockMs?: number;
+}
+
+export function buildConfig(id: HealerConfigId, opts: BuildOptions = {}): HealerConfig {
   const base = readPrompt('base.md');
+  const wall = opts.wallClockMs ?? 300_000;
   switch (id) {
     case 'H1':
       return {
@@ -47,7 +56,7 @@ export function buildConfig(id: HealerConfigId): HealerConfig {
         label: 'diagnose-only',
         systemPrompt: `${base}\n\n${readPrompt('h1-addendum.md')}`,
         maxToolCalls: 4,
-        maxWallClockMs: 300_000,
+        maxWallClockMs: wall,
         allowedTools: [
           'probe_status',
           'diagnose_ai',
@@ -62,9 +71,9 @@ export function buildConfig(id: HealerConfigId): HealerConfig {
       return {
         id,
         label: 'agent+skill',
-        systemPrompt: `${base}\n\n${readPrompt('with-skill-preamble.md')}\n\n${readSkillText()}`,
+        systemPrompt: `${base}\n\n${readPrompt('with-skill-preamble.md')}\n\n${readSkillText(opts.skillReferences ?? true)}`,
         maxToolCalls: 25,
-        maxWallClockMs: 300_000,
+        maxWallClockMs: wall,
         allowedTools: ALL_TOOL_NAMES,
         maxCallsPerTool: {},
       };
@@ -74,7 +83,7 @@ export function buildConfig(id: HealerConfigId): HealerConfig {
         label: 'agent-noskill',
         systemPrompt: base,
         maxToolCalls: 25,
-        maxWallClockMs: 300_000,
+        maxWallClockMs: wall,
         allowedTools: ALL_TOOL_NAMES,
         maxCallsPerTool: {},
       };

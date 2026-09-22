@@ -143,6 +143,14 @@ New `public` tables get `SELECT, INSERT, UPDATE, DELETE` for **both** `anon` and
 - The deploy command reports failures as `{"error": …}` on stdout with exit code 0, like `db query`.
 - Under OneDrive, `rmSync` on a directory the sync client holds fails with `EBUSY`; the packager writes to the OS temp dir by default.
 
+### K. Linking a cloud project with `--api-key` (no platform login)
+
+`link --api-base-url https://<appkey>.us-east.insforge.app --api-key ik_…` accepts a cloud project (the CLI labels it `oss-project`, region `us-test`). In that mode against `bmb-victim`: `db query`, `db policies`, `functions list`, `logs`, `diagnose db` all work; `diagnose --ai` → `{"error":"forbidden"}`; `diagnose advisor` → `{ scan: null, issues: [] }`. This is how the hosted referee runs when no InsForge user API key is provided; with one, `boot.sh` does a platform login instead and the healer gets every tool.
+
+### L. Free-tier model providers
+
+Groq's OpenAI-compatible endpoint (`/openai/v1/chat/completions`) returns tool calls as `choices[0].message.tool_calls[].function.{name, arguments}` with `finish_reason: "tool_calls"`, plus a `reasoning` field on `gpt-oss` models. Free-tier caps observed on 2026-09-22: 1,000 requests/day and **8,000 tokens per minute** for `gpt-oss-120b`, `gpt-oss-20b` and `qwen3.8-27b` alike. Since every healer turn resends the conversation, the referee keeps only the last four tool results verbatim (older ones become one-line stubs), drops the skill's reference files from the H2 prompt on non-Anthropic providers, and allows a 10-minute wall clock so rate-limit waits do not end rounds early. These are deviations from the 5-minute benchmark budget and are recorded on the eval report.
+
 ## Decisions taken from these notes
 
 1. Develop Phases 1–7 against the cloud project `bmb-victim` (`y2z8xzxf.us-east`, created 2026-09-22). Local is optional for fast injector iteration only.

@@ -25,6 +25,18 @@ const envSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   HEALER_MODEL: z.string().default('claude-sonnet-5'),
   JUDGE_MODEL: z.string().default('claude-sonnet-5'),
+  /** anthropic (default) | groq | openrouter | openai-compat — see healer/provider.ts */
+  LLM_PROVIDER: z.enum(['anthropic', 'groq', 'openrouter', 'openai-compat']).default('anthropic'),
+  LLM_API_KEY: z.string().min(1).optional(),
+  LLM_BASE_URL: z.string().url().optional(),
+  /** Include the skill's reference files in the H2 prompt (~15k tokens). Off for free tiers. */
+  HEALER_SKILL_REFERENCES: z
+    .enum(['0', '1', 'true', 'false'])
+    .transform((v) => v === '1' || v === 'true')
+    .optional(),
+  SELF_PLAY_EVERY_MIN: z.coerce.number().int().positive().default(60),
+  /** Benchmark default 5 min; free tiers spend much of it waiting on rate limits. */
+  HEALER_WALL_CLOCK_MS: z.coerce.number().int().positive().default(300_000),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -40,6 +52,10 @@ export function loadEnv(): Env {
     process.loadEnvFile(path.join(REFEREE_ROOT, '.env'));
   } catch {
     // No .env file: rely on process.env (CI / compute service).
+  }
+  // A .env edited on Windows carries CRLF; the loader keeps the \r and keys stop matching.
+  for (const [k, v] of Object.entries(process.env)) {
+    if (typeof v === 'string' && /[\r\n]$/.test(v)) process.env[k] = v.replace(/[\r\n]+$/, '');
   }
   const parsed = envSchema.safeParse(process.env);
   if (!parsed.success) {

@@ -18,7 +18,10 @@ const root = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const src = path.join(root, 'apps/web');
 // Default to a temp dir: the repo may live under a syncing folder (OneDrive) that locks files.
 const outArg = process.argv.indexOf('--out');
-const out = outArg >= 0 && process.argv[outArg + 1] ? path.resolve(process.argv[outArg + 1]) : path.join(tmpdir(), 'bmb-web-deploy');
+const out =
+  outArg >= 0 && process.argv[outArg + 1]
+    ? path.resolve(process.argv[outArg + 1])
+    : path.join(tmpdir(), 'bmb-web-deploy');
 const sharedDist = path.join(root, 'packages/shared/dist');
 if (!existsSync(sharedDist)) throw new Error('build @bmb/shared first');
 

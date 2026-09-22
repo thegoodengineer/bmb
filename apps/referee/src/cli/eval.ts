@@ -21,7 +21,8 @@ import {
 } from '@bmb/shared';
 import { ControlDb } from '../control-db.js';
 import { loadEnv, REFEREE_ROOT } from '../env.js';
-import { anthropicJudge, type JudgeVerdict, judgeRound } from '../judge.js';
+import { hasModelCredentials } from '../healer/provider.js';
+import { type JudgeVerdict, judgeFromEnv, judgeRound } from '../judge.js';
 import { type RoundResult, runRound } from '../round.js';
 
 function flag(name: string, fallback: string): string {
@@ -30,8 +31,10 @@ function flag(name: string, fallback: string): string {
 }
 
 const env = loadEnv();
-if (!env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
-  console.error('ANTHROPIC_API_KEY is not set in apps/referee/.env');
+if (!hasModelCredentials(env)) {
+  console.error(
+    `no model credentials for LLM_PROVIDER=${env.LLM_PROVIDER}: set ANTHROPIC_API_KEY or LLM_API_KEY`,
+  );
   process.exit(2);
 }
 const configs = flag('--config', 'H2')
@@ -68,7 +71,7 @@ interface Row {
 }
 
 const rows: Row[] = [];
-const judge = anthropicJudge(env.JUDGE_MODEL, env.ANTHROPIC_API_KEY);
+const judge = await judgeFromEnv(env);
 let control: ControlDb | undefined;
 try {
   control = new ControlDb(env);

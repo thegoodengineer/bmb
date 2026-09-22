@@ -2,7 +2,8 @@ import { type FaultId, getFault, type HealerConfigId } from '@bmb/shared';
 import type { Env } from './env.js';
 import { type EventSink, MemorySink, MultiSink } from './events.js';
 import { buildConfig } from './healer/configs.js';
-import { anthropicModel, type ModelClient } from './healer/model.js';
+import type { ModelClient } from './healer/model.js';
+import { healerModel } from './healer/provider.js';
 import { type HealerRunResult, runHealer } from './healer/runner.js';
 import { HealerToolset } from './healer/tools.js';
 import { injectorsForRound, makeContext } from './injector/index.js';
@@ -89,20 +90,21 @@ export async function runRound(opts: RoundOptions): Promise<RoundResult> {
     result.attackedAt = new Date(attackedMs).toISOString();
     result.msToAttacked = attackedMs - injectedAt;
 
-    const config = buildConfig(configId);
+    const config = buildConfig(configId, {
+      skillReferences: env.HEALER_SKILL_REFERENCES ?? env.LLM_PROVIDER === 'anthropic',
+      wallClockMs: env.HEALER_WALL_CLOCK_MS,
+    });
+    // Free-tier providers cap tokens per minute; keep every turn small.
+    const constrained = env.LLM_PROVIDER !== 'anthropic';
     const toolset = new HealerToolset({
       cwd: ctx.cwd,
       probeStatus: async () => monitor.latest,
       sink,
       allowedTools: config.allowedTools,
       maxCallsPerTool: config.maxCallsPerTool,
+      ...(constrained ? { maxResultChars: 2500 } : {}),
     });
-    const model =
-      opts.model ??
-      anthropicModel({
-        model: env.HEALER_MODEL,
-        ...(env.ANTHROPIC_API_KEY ? { apiKey: env.ANTHROPIC_API_KEY } : {}),
-      });
+    const model = opts.model ?? healerModel(env);
 
     let healedAtMs: number | undefined;
     const oracle = async () => {
@@ -118,6 +120,7 @@ export async function runRound(opts: RoundOptions): Promise<RoundResult> {
       sink,
       initialProbes: monitor.latest,
       oracle,
+      ...(constrained ? { liveToolResults: 2, maxTokensPerTurn: 1500 } : {}),
     });
     result.healer = healer;
     if (healer.lastVerdict) result.verdict = healer.lastVerdict;

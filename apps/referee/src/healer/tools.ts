@@ -264,12 +264,10 @@ export function scrubCatalogIds(text: string): string {
   return text.replace(CATALOG_ID, '[redacted]');
 }
 
-export function truncate(text: string, tail = false): string {
-  if (text.length <= MAX_RESULT_CHARS) return text;
-  const marker = `\n…[truncated ${text.length - MAX_RESULT_CHARS} chars]…\n`;
-  return tail
-    ? marker + text.slice(text.length - MAX_RESULT_CHARS)
-    : text.slice(0, MAX_RESULT_CHARS) + marker;
+export function truncate(text: string, tail = false, max = MAX_RESULT_CHARS): string {
+  if (text.length <= max) return text;
+  const marker = `\n…[truncated ${text.length - max} chars]…\n`;
+  return tail ? marker + text.slice(text.length - max) : text.slice(0, max) + marker;
 }
 
 /* ------------------------------------------------------------------ toolset */
@@ -292,6 +290,8 @@ export interface ToolsetOptions {
   allowedTools?: readonly ToolName[];
   /** Per-tool call caps (H1: db_query once). */
   maxCallsPerTool?: Partial<Record<ToolName, number>>;
+  /** Result size cap; smaller on providers with tight per-minute token limits. */
+  maxResultChars?: number;
 }
 
 export class HealerToolset {
@@ -325,7 +325,11 @@ export class HealerToolset {
     const started = Date.now();
     const outcome = await this.executeInner(name, rawInput);
     const ms = Date.now() - started;
-    const content = truncate(scrubCatalogIds(outcome.content), name === 'get_logs');
+    const content = truncate(
+      scrubCatalogIds(outcome.content),
+      name === 'get_logs',
+      this.opts.maxResultChars ?? MAX_RESULT_CHARS,
+    );
     const result: ToolOutcome = { ...outcome, content, ms };
     await this.opts.sink.record('tool_result', {
       name,

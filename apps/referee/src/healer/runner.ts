@@ -38,6 +38,43 @@ export interface HealerRunOptions {
   /** Called after every tool call; the run ends as soon as it reports healed. */
   oracle: () => Promise<OracleVerdict>;
   maxTokensPerTurn?: number;
+  /** Keep this many most-recent tool results verbatim; older ones become one-line stubs. */
+  liveToolResults?: number;
+}
+
+/**
+ * Collapse older tool results so the resent history stays small. Free tiers cap tokens per
+ * minute, and every turn resends the whole conversation; the model keeps the last few
+ * results in full and a one-line reminder of the rest.
+ */
+export function pruneHistory(
+  messages: Anthropic.MessageParam[],
+  keep: number,
+): Anthropic.MessageParam[] {
+  const positions: string[] = [];
+  messages.forEach((m, i) => {
+    if (m.role !== 'user' || typeof m.content === 'string') return;
+    m.content.forEach((b, j) => {
+      if (b.type === 'tool_result') positions.push(`${i}:${j}`);
+    });
+  });
+  const stale = new Set(positions.slice(0, Math.max(0, positions.length - keep)));
+  if (stale.size === 0) return messages;
+  return messages.map((m, i) => {
+    if (m.role !== 'user' || typeof m.content === 'string') return m;
+    return {
+      ...m,
+      content: m.content.map((b, j) => {
+        if (b.type !== 'tool_result' || !stale.has(`${i}:${j}`)) return b;
+        const text = typeof b.content === 'string' ? b.content : JSON.stringify(b.content ?? '');
+        const head = text.slice(0, 160).replace(/\s+/g, ' ');
+        return {
+          ...b,
+          content: `[earlier result, ${text.length} chars, ${b.is_error ? 'error' : 'ok'}: ${head}…]`,
+        };
+      }),
+    };
+  });
 }
 
 export function formatAlert(results: ProbeResult[]): string {
@@ -90,15 +127,28 @@ export async function runHealer(opts: HealerRunOptions): Promise<HealerRunResult
 
     let response: Anthropic.Message;
     turns++;
-    try {
-      response = await model.create({
+    const keep = opts.liveToolResults ?? 4;
+    const call = (live: number) =>
+      model.create({
         system: config.systemPrompt,
-        messages,
+        messages: pruneHistory(messages, live),
         tools: toolset.definitions,
         maxTokens: opts.maxTokensPerTurn ?? 4096,
       });
+    try {
+      response = await call(keep);
     } catch (e) {
-      return finish('error', e instanceof Error ? e.message : String(e));
+      // Request too large (free-tier token caps): keep only the newest result and retry once.
+      const status = (e as { status?: number }).status;
+      if (status === 413 && keep > 1) {
+        try {
+          response = await call(1);
+        } catch (e2) {
+          return finish('error', e2 instanceof Error ? e2.message : String(e2));
+        }
+      } else {
+        return finish('error', e instanceof Error ? e.message : String(e));
+      }
     }
     tokensIn += response.usage.input_tokens;
     tokensOut += response.usage.output_tokens;

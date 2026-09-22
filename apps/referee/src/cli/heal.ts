@@ -7,6 +7,7 @@
 import type { FaultId, HealerConfigId } from '@bmb/shared';
 import { getFault } from '@bmb/shared';
 import { loadEnv } from '../env.js';
+import { hasModelCredentials } from '../healer/provider.js';
 import { runRound } from '../round.js';
 
 function flag(name: string): string | undefined {
@@ -19,12 +20,16 @@ const faultArg = flag('--fault') ?? 'F01';
 const faultIds = faultArg.split(',').map((s) => s.trim()) as FaultId[];
 for (const id of faultIds) if (!getFault(id)) throw new Error(`unknown fault ${id}`);
 const configId = (flag('--config') ?? 'H2') as HealerConfigId;
-if (!env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
-  console.error('ANTHROPIC_API_KEY is not set in apps/referee/.env');
+if (!hasModelCredentials(env)) {
+  console.error(
+    `no model credentials for LLM_PROVIDER=${env.LLM_PROVIDER}: set ANTHROPIC_API_KEY or LLM_API_KEY in apps/referee/.env`,
+  );
   process.exit(2);
 }
 
-console.log(`round: faults=${faultIds.join('+')} config=${configId} model=${env.HEALER_MODEL}`);
+console.log(
+  `round: faults=${faultIds.join('+')} config=${configId} provider=${env.LLM_PROVIDER} model=${env.HEALER_MODEL}`,
+);
 const result = await runRound({
   env,
   faultIds,

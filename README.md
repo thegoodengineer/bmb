@@ -32,7 +32,7 @@ Scoring, the nine judge questions and the reward-hacking guard are in [`docs/SCO
 
 ## Run it locally in five commands
 
-Prerequisites: Node 20+, pnpm 12, an InsForge account (`npx @insforge/cli login`), an Anthropic API key.
+Prerequisites: Node 20+, pnpm 12, an InsForge account (`npx @insforge/cli login`), and a model key: an Anthropic key (default), or a free Groq/OpenRouter key with `LLM_PROVIDER=groq|openrouter` (see `apps/referee/.env.example`; free tiers cap tokens per minute, so rounds are slower and the H2 prompt drops the skill's reference files).
 
 ```bash
 pnpm install && pnpm -r build
@@ -64,4 +64,4 @@ Useful commands:
 
 ## Status
 
-Phases 0–5 are built and verified against the cloud projects (see commit history for each gate's output). Live model runs, the batch evaluation and the results table need an Anthropic API key in `apps/referee/.env`.
+Phases 0–8 are built and verified against the cloud projects (see commit history for each gate's output). The public site is live; the healer runs on whichever provider `apps/referee/.env` names. The batch evaluation and the results table are pending.

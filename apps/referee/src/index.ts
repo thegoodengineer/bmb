@@ -39,26 +39,10 @@ async function main(): Promise<void> {
   const abandoned = await control.abandonStale();
   if (abandoned) log(`boot: marked ${abandoned} stale round(s) invalid`);
 
-  log('boot: resetting the victim');
-  const reset = await resetVictim(env, (cmd) => log(`  $ ${cmd.slice(0, 120)}`));
-  log(`boot: reset done in ${reset.ms} ms`);
-
   const idle = new ProbeMonitor(env);
-  for (let i = 0; i < 5; i++) {
-    const r = await idle.runNow();
-    log(
-      `boot: probes ${
-        allGreen(r)
-          ? 'green'
-          : `RED ${r
-              .filter((x) => !x.ok)
-              .map((x) => `${x.name}:${x.error}`)
-              .join(' | ')}`
-      }`,
-    );
-    if (idle.greenStreak >= 2) break;
-  }
-  if (idle.greenStreak < 2) throw new Error('boot: victim is not green; refusing to accept rounds');
+  // Never exit on a bad victim: a crash-looping process is what the platform gives up on.
+  // Keep resetting with backoff until the victim is green, then accept rounds.
+  await untilHealthy(env, idle, 'boot');
   idle.start(false);
 
   let lastSelfPlayAt = 0;
@@ -72,7 +56,20 @@ async function main(): Promise<void> {
 
     if (next) {
       idle.stop();
-      await processRound(next);
+      try {
+        await processRound(next);
+      } catch (e) {
+        // A round must never take the referee down. Record it, then make the victim healthy.
+        const msg = e instanceof Error ? e.message : String(e);
+        log(`round ${next.id} crashed: ${msg}`);
+        await control
+          .setStatus(next.id, 'invalid', {
+            unhealed_reason: `referee_error: ${msg}`.slice(0, 500),
+            ended_at: new Date().toISOString(),
+          })
+          .catch(() => {});
+        await untilHealthy(env, idle, 'recovery');
+      }
       lastActivityAt = Date.now();
       idle.start(false);
       continue;
@@ -230,6 +227,39 @@ function stripDiagnosis(p: Record<string, unknown>) {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Reset the victim and require two consecutive green probe cycles, retrying with backoff
+ * (30 s, 60 s, … capped at 5 min) for as long as it takes.
+ */
+async function untilHealthy(
+  env: ReturnType<typeof loadEnv>,
+  monitor: ProbeMonitor,
+  phase: string,
+): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      log(`${phase}: resetting the victim (attempt ${attempt})`);
+      const report = await resetVictim(env, (cmd) => log(`  $ ${cmd.slice(0, 120)}`));
+      log(
+        `${phase}: reset done in ${report.ms} ms${report.retried.length ? ` (retried ${report.retried.join(',')})` : ''}`,
+      );
+      monitor.resetStreak();
+      for (let i = 0; i < 5 && monitor.greenStreak < 2; i++) {
+        const r = await monitor.runNow();
+        const red = r.filter((x) => !x.ok);
+        log(
+          `${phase}: probes ${allGreen(r) ? 'green' : `RED ${red.map((x) => `${x.name}:${x.error}`).join(' | ')}`}`,
+        );
+      }
+      if (monitor.greenStreak >= 2) return;
+      log(`${phase}: victim not green after reset`);
+    } catch (e) {
+      log(`${phase}: reset failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    await sleep(Math.min(300_000, 30_000 * attempt));
+  }
 }
 
 main().catch((e) => {

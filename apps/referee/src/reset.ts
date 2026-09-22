@@ -19,27 +19,45 @@ import { seedVictim } from './victim/seed.js';
 export interface ResetReport {
   fixed: string[];
   cleaned: string[];
+  /** Fixes that threw on the first pass (retried once after everything else). */
+  retried: string[];
   artifactsAfter: Record<string, boolean>;
   ms: number;
 }
 
+/**
+ * Apply every fix even if one throws: a healer can leave the victim in states no reference
+ * fix anticipated, and one failing statement must not leave the other faults in place. Fixes
+ * that failed are retried once after the rest (their preconditions may now hold). Only
+ * leftover artifacts make the reset fail.
+ */
 export async function resetVictim(
   env: Env,
   log: (command: string) => void = () => {},
 ): Promise<ResetReport> {
   const started = Date.now();
   const ctx: InjectorContext = makeContext(env, log);
+  const ordered = [...[...SINGLE_INJECTORS].sort(byResetOrder), ...DECOY_INJECTORS];
 
-  const fixed: string[] = [];
-  for (const inj of [...SINGLE_INJECTORS].sort(byResetOrder)) {
-    await inj.referenceFix(ctx);
-    fixed.push(inj.id);
+  const failed: typeof ordered = [];
+  for (const inj of ordered) {
+    try {
+      await inj.referenceFix(ctx);
+    } catch (e) {
+      log(`reset: ${inj.id} fix failed, will retry: ${e instanceof Error ? e.message : e}`);
+      failed.push(inj);
+    }
   }
-  const cleaned: string[] = [];
-  for (const inj of DECOY_INJECTORS) {
-    await inj.referenceFix(ctx);
-    cleaned.push(inj.id);
+  for (const inj of failed) {
+    try {
+      await inj.referenceFix(ctx);
+    } catch (e) {
+      log(`reset: ${inj.id} fix failed again: ${e instanceof Error ? e.message : e}`);
+    }
   }
+  const fixed = SINGLE_INJECTORS.map((i) => i.id);
+  const cleaned = DECOY_INJECTORS.map((i) => i.id);
+  const retried = failed.map((i) => i.id);
 
   await seedVictim(env);
 
@@ -48,7 +66,7 @@ export async function resetVictim(
   if (leftover.length > 0) {
     throw new Error(`reset left artifacts behind: ${leftover.map(([id]) => id).join(', ')}`);
   }
-  return { fixed, cleaned, artifactsAfter, ms: Date.now() - started };
+  return { fixed, cleaned, retried, artifactsAfter, ms: Date.now() - started };
 }
 
 /** F05 first (column name), everything else in catalog order. */

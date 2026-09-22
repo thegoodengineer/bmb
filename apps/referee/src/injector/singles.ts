@@ -116,20 +116,28 @@ export const F05: Injector = {
     await sql(ctx, 'alter table public.notes rename column body to content');
   },
   async referenceFix(ctx) {
-    const hasContent = await exists(
-      ctx,
-      `select 1 from information_schema.columns where table_schema='public' and table_name='notes' and column_name='content'`,
-    );
-    if (hasContent) await sql(ctx, 'alter table public.notes rename column content to body');
+    const hasContent = await exists(ctx, NOTES_COLUMN('content'));
+    if (!hasContent) return;
+    // A healer may have worked around the rename by adding a new `body` column (plain or
+    // GENERATED from content). It holds no original data (DML is not allowed to the healer),
+    // so drop it before renaming the real column back.
+    if (await exists(ctx, NOTES_COLUMN('body'))) {
+      await sql(ctx, 'alter table public.notes drop column body');
+    }
+    await sql(ctx, 'alter table public.notes rename column content to body');
   },
   async artifactPresent(ctx) {
-    const hasBody = await exists(
-      ctx,
-      `select 1 from information_schema.columns where table_schema='public' and table_name='notes' and column_name='body'`,
-    );
-    return !hasBody;
+    // The original column is still renamed, whatever else was added next to it. A new `body`
+    // column beside `content` makes some probes pass but is a workaround, not a fix.
+    if (await exists(ctx, NOTES_COLUMN('content'))) return true;
+    return !(await exists(ctx, NOTES_COLUMN('body')));
   },
 };
+
+function NOTES_COLUMN(name: string): string {
+  return `select 1 from information_schema.columns
+           where table_schema='public' and table_name='notes' and column_name='${name}'`;
+}
 
 /** F06 Poison Pill: BEFORE INSERT trigger raises. */
 export const F06: Injector = {

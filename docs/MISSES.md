@@ -20,3 +20,26 @@ These were hit by the referee, not the healer, and are recorded in `INSFORGE_NOT
 - A module-level `throw` in an edge function fails the *deployment* on Deno Subhosting rather than producing a broken-but-deployed function. A fault that "throws on invoke" must throw inside the handler.
 - The first PostgREST request after any DDL on a table pays a schema-cache reload (~1.5 s from us-east to a client in India). A latency probe needs one retry to avoid a false positive.
 - The local Docker runtime executes only CommonJS (`module.exports`) edge functions, while the cloud runtime and the documentation use ESM. `docs/INSFORGE_NOTES.md` §B has the four-variant experiment.
+
+## Public rounds, 2026-09-22 (Groq free tier: gpt-oss-120b, falling back to gpt-oss-20b / qwen3.8-27b)
+
+### F05 Renamed · H2 · gpt-oss-20b · round 7c86add9: workaround instead of repair
+
+- **Outcome:** unhealed (provider rate limit ended the round), later marked invalid by a referee restart; judge not run
+- **What the healer did:** read the columns, saw `content` where the app reads `body`, then added `body text GENERATED ALWAYS AS (content) STORED`, dropped it, and added a plain `body text` column
+- **What was actually wrong:** column `body` was renamed to `content`; the fix is `ALTER TABLE notes RENAME COLUMN content TO body`
+- **What it exposed in the referee:** the F05 artifact check only asked "does `body` exist", so a new column beside `content` read as fixed; and the reset crashed on the duplicate column, taking the referee down until it was changed to drop a healer-added `body` before renaming back. The check now treats `content` still existing as the fault still present.
+- **Upstream:** none; referee bug, fixed in this repo
+
+### F06 Poison Pill · H2 · gpt-oss-20b · round 9b42e9a0: wrong component
+
+- **Outcome:** unhealed, judge 4/9 fail (round later reclassified invalid because it ended on a malformed tool call)
+- **What the healer diagnosed:** `notes_insert_own` policy, "INSERT withCheck requires owner_id but client omits it"
+- **What was actually wrong:** a `BEFORE INSERT` trigger `notes_block` raising `nope` (the probe error text was `P0001 nope`)
+- **What happened:** the healer never called `db_triggers`; it tried to add an owner-setting trigger, which the old SQL filter wrongly refused as two statements (function bodies contain `;`). The filter now parses dollar-quoted bodies.
+
+### C01 Double Lock · H2 · gpt-oss-120b · round 6e2f92b0: stopped after one of two faults
+
+- **Outcome:** the healer fixed the deny-all select policy with `ALTER POLICY`, probes stayed red because `SELECT` was also revoked; the round then hung on a provider request for 12 minutes and was invalidated by a restart
+- **What was actually wrong:** select policy `USING (false)` **and** `REVOKE SELECT ON notes FROM authenticated`
+- **What it exposed:** model calls had no per-request timeout and the wall clock was only checked between turns; both fixed

@@ -12,7 +12,20 @@ The mechanics are borrowed, with credit: faults-not-symptoms, decoys, compound f
 
 ## Results
 
-_(Filled from `docs/EVAL_<date>.md` after the batch evaluation runs. The table reports, per fault and per healer configuration, heal rate, diagnosis pass rate, median time to mitigate, and the lucky-fix rate. The H2 versus H3 delta is what the `insforge-debug` skill is worth.)_
+The batch evaluation (`pnpm --filter @bmb/referee eval`, written to `docs/EVAL_<date>.md`, with the H2 versus H3 delta that measures what the `insforge-debug` skill is worth) has not run yet. It needs about 160 rounds, and the free model tier the live site runs on allows roughly a dozen per day. Until it runs, this is the complete record of scored public rounds. All of them used configuration H2 with the compact skill, on Groq's free tier, with `gpt-oss-120b` falling back to `gpt-oss-20b` when its quota ran out.
+
+| Round | Fault | Started by | Healed | Judge | Time to diagnosis | Time to mitigate | Tool calls |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `bea3bddc` | F01 Lockout | visitor | yes | 9/9 | 96 s | 153 s | 8 |
+| `2cde6ec2` | F02 Molasses + D01 Log Storm decoy | visitor | yes | 9/9 | 167 s | 175 s | 7 |
+| `c537222f` | F07 Vanished RPC | visitor | no, stopped | 9/9 | 59 s | – | 9 |
+| `c3bc6582` | F08 Impossible Rule | self-play | yes¹ | 9/9 | 25 s | 111 s | 7 |
+| `499c6a31` | F06 Poison Pill | self-play | no, out of time | 0/9 | – | – | 17 |
+| `e8594c4e` | F07 Vanished RPC | visitor | yes | 9/9 | 218 s | 349 s | 9 |
+
+Four of six rounds were healed and five of six diagnoses passed. There were no lucky fixes (healed with a failed diagnosis). The median time to mitigate was 164 s. Rounds that ended on a provider failure or a referee error are recorded as invalid and excluded, as [`docs/SCORING.md`](docs/SCORING.md) specifies.
+
+¹ Recorded as unhealed when it ran. The artifact check then treated any CHECK constraint as the fault, including the healer's valid replacement. The check was fixed and the round reclassified; [`docs/MISSES.md`](docs/MISSES.md) has the details.
 
 ## Where it breaks
 
@@ -64,4 +77,10 @@ Useful commands:
 
 ## Status
 
-Phases 0–8 are built and verified against the cloud projects (see commit history for each gate's output). The site is live and the referee runs as an always-on InsForge compute service (`bmb-referee`, iad) with the healer on Groq `openai/gpt-oss-120b` and the judge on `openai/gpt-oss-20b`. First public rounds: F01 healed in 2m33s (8 tool calls, judge 9/9), F02 with the Log Storm decoy healed in 2m55s (judge pass). The batch evaluation and the results table are pending.
+Phases 0–6 and 8 are built and verified against the cloud projects; each gate's output is in the commit history. The site is live. The referee runs as an always-on InsForge compute service (`bmb-referee`, iad). The healer and judge run on Groq's free tier, falling back across `gpt-oss-120b`, `gpt-oss-20b` and `qwen3.8-27b` as each model's daily quota runs out. When all three are spent, a round ends as "model provider unavailable" and is not scored.
+
+Still open:
+
+- **Phase 7 batch evaluation.** It waits on a paid model key or several days of free quota.
+- **README extras.** The 15-second GIF is missing, and the results table above will be replaced by the evaluation's.
+- **A 48-hour unattended run.** The referee recovers from a broken victim by itself, and the web app wakes it if the platform stops its machine ([`docs/INSFORGE_NOTES.md`](docs/INSFORGE_NOTES.md) §M).

@@ -64,4 +64,4 @@ Useful commands:
 
 ## Status
 
-Phases 0–8 are built and verified against the cloud projects (see commit history for each gate's output). The public site is live; the healer runs on whichever provider `apps/referee/.env` names. The batch evaluation and the results table are pending.
+Phases 0–8 are built and verified against the cloud projects (see commit history for each gate's output). The site is live and the referee runs as an always-on InsForge compute service (`bmb-referee`, iad) with the healer on Groq `openai/gpt-oss-120b` and the judge on `openai/gpt-oss-20b`. First public rounds: F01 healed in 2m33s (8 tool calls, judge 9/9), F02 with the Log Storm decoy healed in 2m55s (judge pass). The batch evaluation and the results table are pending.

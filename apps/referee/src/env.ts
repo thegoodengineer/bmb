@@ -6,6 +6,9 @@ import { z } from 'zod';
  * Referee configuration. Loaded once from apps/referee/.env (gitignored) merged over
  * process.env, and validated with zod so a missing key fails loudly at startup.
  */
+/** Model used when LLM_PROVIDER=anthropic and no model is named. */
+export const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-5';
+
 const envSchema = z.object({
   VICTIM_URL: z.string().url(),
   VICTIM_ANON_KEY: z.string().min(1),
@@ -23,8 +26,8 @@ const envSchema = z.object({
   CONTROL_API_KEY: z.string().min(1).optional(),
 
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
-  HEALER_MODEL: z.string().default('claude-sonnet-5'),
-  JUDGE_MODEL: z.string().default('claude-sonnet-5'),
+  HEALER_MODEL: z.string().default(DEFAULT_ANTHROPIC_MODEL),
+  JUDGE_MODEL: z.string().default(DEFAULT_ANTHROPIC_MODEL),
   /** anthropic (default) | groq | openrouter | openai-compat — see healer/provider.ts */
   LLM_PROVIDER: z.enum(['anthropic', 'groq', 'openrouter', 'openai-compat']).default('anthropic'),
   LLM_API_KEY: z.string().min(1).optional(),

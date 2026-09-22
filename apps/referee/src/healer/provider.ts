@@ -1,4 +1,4 @@
-import type { Env } from '../env.js';
+import { DEFAULT_ANTHROPIC_MODEL, type Env } from '../env.js';
 import { anthropicModel, type ModelClient } from './model.js';
 import { type OpenAICompatOptions, openAICompatModel } from './openai-compat.js';
 
@@ -35,7 +35,8 @@ export function providerName(env: Env): string {
 export function resolveModelId(env: Env, requested: string): string {
   if (env.LLM_PROVIDER === 'anthropic') return requested;
   const def = PROVIDER_DEFAULTS[env.LLM_PROVIDER]?.model ?? '';
-  return requested.startsWith('claude') && def ? def : requested;
+  // A leftover Anthropic default on another provider falls back to that provider's default.
+  return requested === DEFAULT_ANTHROPIC_MODEL && def ? def : requested;
 }
 
 export function compatOptions(env: Env, model: string, label: string): OpenAICompatOptions {

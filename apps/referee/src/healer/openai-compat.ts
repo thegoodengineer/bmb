@@ -47,6 +47,9 @@ interface ChatResponse {
 
 let counter = 0;
 
+/** Retry-After above this is treated as a spent quota, not a burst limit. */
+const MAX_RETRY_AFTER_S = 90;
+
 function blockText(block: Anthropic.ContentBlockParam | Anthropic.ContentBlock): string {
   if (block.type === 'text') return block.text;
   return '';
@@ -189,6 +192,15 @@ export async function chatCompletion(
     }
     const retryAfter = Number(res.headers.get('retry-after'));
     const retryable = res.status === 429 || res.status >= 500;
+    // A long Retry-After means a daily quota is spent: fail this round now rather than
+    // freezing the referee (and the public queue) for minutes or hours.
+    if (res.status === 429 && Number.isFinite(retryAfter) && retryAfter > MAX_RETRY_AFTER_S) {
+      throw new OpenAICompatError(
+        `${opts.label ?? 'llm'} quota exhausted, provider asks to wait ${Math.round(retryAfter)}s`,
+        429,
+        retryAfter * 1000,
+      );
+    }
     if (!retryable || attempt > maxRetries) {
       throw new OpenAICompatError(
         `${opts.label ?? 'llm'} ${res.status}: ${text.slice(0, 300)}`,

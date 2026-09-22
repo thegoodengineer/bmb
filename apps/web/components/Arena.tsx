@@ -34,8 +34,9 @@ const EVENT_KINDS = [
 
 /**
  * The single page's live state: rounds (newest first) and the events of the round being
- * shown. Realtime first (`rounds:all` + `round:<id>` channels); if the socket is not
- * connected within a few seconds, or drops, a 2 s poll takes over.
+ * shown. Realtime first (`rounds:all` + `round:<id>` channels), with a poll that always
+ * runs underneath it: a dropped realtime message would otherwise leave a permanent hole in
+ * the heal log. The poll is every 2 s while the socket is down and every 5 s while it is up.
  */
 export function Arena({ catalog, initialRounds, initialEvents }: Props) {
   const [rounds, setRounds] = useState<PublicRound[]>(initialRounds);
@@ -43,7 +44,6 @@ export function Arena({ catalog, initialRounds, initialEvents }: Props) {
   const [prevEvents, setPrevEvents] = useState<PublicEvent[]>([]);
   const [live, setLive] = useState<'realtime' | 'polling' | 'connecting'>('connecting');
   const [myRoundId, setMyRoundId] = useState<string | null>(null);
-  const [scoreKey, setScoreKey] = useState(0);
   const subscribedRound = useRef<string | null>(null);
 
   const active = useMemo(() => rounds.find((r) => ACTIVE.has(r.status)), [rounds]);
@@ -57,6 +57,9 @@ export function Arena({ catalog, initialRounds, initialEvents }: Props) {
     return p ? { round: p, events: prevEvents } : undefined;
   }, [rounds, shown, prevEvents]);
 
+  // A new finished round is what the scoreboard needs to refetch on.
+  const doneCount = useMemo(() => rounds.filter((r) => r.status === 'done').length, [rounds]);
+
   const queueAhead = useMemo(() => {
     if (!myRoundId) return null;
     const mine = rounds.find((r) => r.id === myRoundId);
@@ -66,10 +69,13 @@ export function Arena({ catalog, initialRounds, initialEvents }: Props) {
 
   const upsertRound = useCallback((r: PublicRound) => {
     setRounds((prev) => {
+      const existing = prev.find((x) => x.id === r.id);
+      // The poll resends unchanged rows every few seconds; keep the same array so nothing
+      // downstream re-renders or refetches on them.
+      if (existing && existing.status === r.status && existing.healed === r.healed) return prev;
       const next = prev.filter((x) => x.id !== r.id);
       next.push(r);
       next.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
-      if (r.status === 'done') setScoreKey((k) => k + 1);
       return next.slice(0, 30);
     });
   }, []);
@@ -82,17 +88,22 @@ export function Arena({ catalog, initialRounds, initialEvents }: Props) {
 
   const shownId = shown?.id;
   const previousId = previous?.round.id;
-  const lastEventId = useRef(0);
-  lastEventId.current = events.at(-1)?.id ?? 0;
+  // Cursor for the reconciliation poll. Only a poll response moves it: a realtime message
+  // can be dropped, and advancing past it would hide every event the drop left behind.
+  const pollCursor = useRef(0);
 
   // Load events when the shown round changes.
   useEffect(() => {
     if (!shownId) return;
     let cancelled = false;
+    pollCursor.current = 0;
     fetch(`/api/events?round=${shownId}`)
       .then((r) => r.json())
       .then((d: { events?: PublicEvent[] }) => {
-        if (!cancelled) setEvents(d.events ?? []);
+        if (cancelled) return;
+        const list = d.events ?? [];
+        setEvents(list);
+        pollCursor.current = list.at(-1)?.id ?? 0;
       })
       .catch(() => {});
     return () => {
@@ -126,7 +137,6 @@ export function Arena({ catalog, initialRounds, initialEvents }: Props) {
         const next = prev.filter((x) => x.id !== merged.id);
         next.push(merged);
         next.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
-        if (merged.status === 'done') setScoreKey((k) => k + 1);
         return next.slice(0, 30);
       });
     };
@@ -176,21 +186,25 @@ export function Arena({ catalog, initialRounds, initialEvents }: Props) {
     void rt.subscribe(channel);
   }, [shownId, live]);
 
-  // Polling fallback (also a safety net while realtime is connecting).
+  // Reconciliation poll. Realtime is the fast path, but it can drop a message, so this runs
+  // underneath it and refetches everything past the cursor.
   useEffect(() => {
-    if (live === 'realtime') return;
-    const t = setInterval(async () => {
-      try {
-        const r = (await (await fetch('/api/rounds')).json()) as { rounds?: PublicRound[] };
-        if (r.rounds) for (const x of r.rounds) upsertRound(x);
-        if (shownId) {
+    const t = setInterval(
+      async () => {
+        try {
+          const r = (await (await fetch('/api/rounds')).json()) as { rounds?: PublicRound[] };
+          if (r.rounds) for (const x of r.rounds) upsertRound(x);
+          if (!shownId) return;
           const e = (await (
-            await fetch(`/api/events?round=${shownId}&since=${lastEventId.current}`)
+            await fetch(`/api/events?round=${shownId}&since=${pollCursor.current}`)
           ).json()) as { events?: PublicEvent[] };
           for (const x of e.events ?? []) appendEvent(x);
-        }
-      } catch {}
-    }, 2000);
+          const last = e.events?.at(-1)?.id;
+          if (last && last > pollCursor.current) pollCursor.current = last;
+        } catch {}
+      },
+      live === 'realtime' ? 5000 : 2000,
+    );
     return () => clearInterval(t);
   }, [live, shownId, upsertRound, appendEvent]);
 
@@ -226,7 +240,7 @@ export function Arena({ catalog, initialRounds, initialEvents }: Props) {
         />
       </div>
 
-      <Scoreboard refreshKey={scoreKey} faultNames={faultNames} />
+      <Scoreboard refreshKey={doneCount} faultNames={faultNames} />
 
       <footer className="flex flex-wrap items-center gap-4 border-t border-line pt-4 font-mono text-xs text-fg-dim">
         <HowScoringWorks />

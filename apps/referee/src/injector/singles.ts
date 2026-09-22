@@ -208,12 +208,12 @@ export const F08: Injector = {
     await sql(ctx, 'alter table public.notes drop constraint if exists notes_title_impossible');
   },
   async artifactPresent(ctx) {
-    // The app defines no CHECK constraints on notes, so any CHECK constraint is the artifact.
     return exists(
       ctx,
       `select 1 from pg_constraint k join pg_class c on c.oid = k.conrelid
          join pg_namespace n on n.oid = c.relnamespace
-        where n.nspname='public' and c.relname='notes' and k.contype='c'`,
+        where n.nspname='public' and c.relname='notes' and k.contype='c'
+          and k.conname = 'notes_title_impossible'`,
     );
   },
 };

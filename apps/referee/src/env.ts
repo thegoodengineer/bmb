@@ -37,6 +37,8 @@ const envSchema = z.object({
   SELF_PLAY_EVERY_MIN: z.coerce.number().int().positive().default(60),
   /** Benchmark default 5 min; free tiers spend much of it waiting on rate limits. */
   HEALER_WALL_CLOCK_MS: z.coerce.number().int().positive().default(300_000),
+  /** Probe cycle gap while a round is active. Default 3 s (production); lower for local dev. */
+  PROBE_INTERVAL_MS: z.coerce.number().int().positive().default(3_000),
 });
 
 export type Env = z.infer<typeof envSchema>;

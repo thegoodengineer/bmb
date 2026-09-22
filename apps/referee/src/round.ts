@@ -61,7 +61,7 @@ export async function runRound(opts: RoundOptions): Promise<RoundResult> {
   const injectors = injectorsForRound(faultIds);
   const scope = new Set(faultIds.flatMap((id) => getFault(id)?.groundTruth.scope ?? []));
 
-  const monitor = new ProbeMonitor(env, sink);
+  const monitor = new ProbeMonitor(env, sink, { active: env.PROBE_INTERVAL_MS, idle: 15_000 });
   const result: RoundResult = { faultIds, configId, status: 'invalid', events: memory.events };
 
   try {

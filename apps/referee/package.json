@@ -11,11 +11,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "biome check .",
     "test": "vitest run --passWithNoTests",
-    "probes": "tsx src/cli/probes.ts"
+    "probes": "tsx src/cli/probes.ts",
+    "seed": "tsx src/cli/seed.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",
     "@bmb/shared": "workspace:*",
+    "@insforge/cli": "0.2.8",
     "@insforge/sdk": "^1.5.2",
     "zod": "^4.6.5"
   },

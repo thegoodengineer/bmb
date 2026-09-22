@@ -111,6 +111,18 @@ New `public` tables get `SELECT, INSERT, UPDATE, DELETE` for **both** `anon` and
 - `function.logs` stays empty locally even after invocations; `function-deploy.logs` → `LOG_NOT_FOUND`. `insforge.logs` works and records `POST /functions/<slug> 500`.
 - `metadata --json` sections: `auth` (`requireEmailVerification`, `passwordMinLength`, …), `database.tables`, `storage`, `functions`, `realtime.channels`.
 
+### H. Phase 1 findings on the cloud project (`bmb-victim`, nano, us-east)
+
+- `create --json --name … --org-id … --region us-east --template empty` took ~2 min, wrote `.insforge/project.json`, `.env.local`, `AGENTS.md`, a `.gitignore`, and installed the agent skills.
+- Cloud default is `requireEmailVerification: true`; `config apply --auto-approve --json` with `require_email_verification = false` flipped it (plan/apply output in git history of this file's commit).
+- `db migrations up --all` validates **every** file name in `migrations/` first: a `.gitkeep` makes it refuse with `Invalid migration filename`.
+- `functions deploy` on the cloud builds on Deno Subhosting; the first attempt returned `"deployment": {"status": "failed"}` with a 502 HTML page in `buildLogs` and, until a successful build, invocations fell through to `http://localhost:7133` (ECONNREFUSED). The retry succeeded and `functions list` then reported `deploymentUrl: https://<appkey>.function2.insforge.app`. `function-deploy.logs` works on cloud.
+- The ESM function (`import … from 'npm:@insforge/sdk'`, `export default`) runs fine on cloud. Invoked with the API key as bearer it bypasses RLS (404 "note not found" on a random id), so P5 must invoke as the probe user.
+- Bulk insert of 400k rows via ten `db query` statements of 20k rows each: ~65 s. Autoanalyze lagged the insert by a few seconds, so the very first P2 ran a seq scan (1.5 s); the seed now ends with `analyze public.notes`.
+- **F02 sizing.** `explain (analyze, buffers)` for the P2 query on the nano instance: with the index 0.05–2 ms; without it a parallel seq scan reading ~4k pages from disk each time: 256–328 ms at 200k rows, **447–461 ms at 400k rows** (100 MB heap, 132 MB with indexes). Filler is therefore 400k, not the spec's 5k, and `P2_MAX_MS` is per vantage point (400 next to the DB, 600 from India where healthy P2 is ~260–290 ms).
+- The first probe cycle after an idle period is consistently cold (P1 ~1.6 s, P2 0.7–1.8 s, P5 ~1.4 s); cycles 2+ are ~260–600 ms per probe from India. The `probes` CLI therefore passes on a streak of 3 consecutive green cycles, which is the oracle's own condition.
+- The referee runs the CLI as `node <@insforge/cli bin>` with `cwd = victim/` and no shell, pinned to 0.2.8 in `apps/referee/package.json`; `package.json` has no `exports` block so `require.resolve('@insforge/cli/package.json')` works. `NO_COLOR=1 CI=1` keeps output clean.
+
 ## Decisions taken from these notes
 
 1. Develop Phases 1–7 against the cloud project `bmb-victim` (`y2z8xzxf.us-east`, created 2026-09-22). Local is optional for fast injector iteration only.

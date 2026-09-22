@@ -237,20 +237,58 @@ function errorText(e: { message?: string } | string): string {
   return typeof e === 'string' ? e : (e.message ?? 'unknown error');
 }
 
-export function openAICompatModel(opts: OpenAICompatOptions): ModelClient {
+/** Models whose provider quota is spent, and when they may be tried again (epoch ms). */
+const exhaustedUntil = new Map<string, number>();
+
+function isQuotaExhausted(e: unknown): e is OpenAICompatError {
+  return e instanceof OpenAICompatError && e.status === 429 && (e.retryAfterMs ?? 0) > 0;
+}
+
+/**
+ * Try `models` in order, skipping any whose quota is known to be spent. Free tiers give
+ * each model its own daily budget, so a chain multiplies what one key can serve. Every
+ * response carries the model that actually answered (`res.model`), which the runner records.
+ */
+export async function chatWithFallback(
+  opts: OpenAICompatOptions,
+  models: string[],
+  bodyFor: (model: string) => Record<string, unknown>,
+): Promise<{ res: ChatResponse; model: string }> {
+  const now = Date.now();
+  const candidates = models.filter((m) => (exhaustedUntil.get(m) ?? 0) <= now);
+  const chain = candidates.length ? candidates : models;
+  let lastError: unknown;
+  for (const model of chain) {
+    try {
+      const res = await chatCompletion({ ...opts, model }, bodyFor(model));
+      return { res, model };
+    } catch (e) {
+      lastError = e;
+      if (!isQuotaExhausted(e)) throw e;
+      exhaustedUntil.set(model, Date.now() + (e.retryAfterMs ?? 60_000));
+    }
+  }
+  throw lastError;
+}
+
+export function openAICompatModel(
+  opts: OpenAICompatOptions,
+  fallbacks: string[] = [],
+): ModelClient {
+  const models = [opts.model, ...fallbacks.filter((m) => m !== opts.model)];
   return {
     model: opts.model,
     async create(turn) {
-      const res = await chatCompletion(opts, {
+      const { res, model } = await chatWithFallback(opts, models, (m) => ({
         messages: toChatMessages(turn),
         tools: toChatTools(turn.tools),
         tool_choice: 'auto',
         max_tokens: turn.maxTokens,
         temperature: 0.2,
         // gpt-oss models spend output tokens on reasoning; low effort keeps turns cheap.
-        ...(/gpt-oss/.test(opts.model) ? { reasoning_effort: 'low' } : {}),
-      });
-      return fromChatResponse(res, opts.model);
+        ...(/gpt-oss/.test(m) ? { reasoning_effort: 'low' } : {}),
+      }));
+      return fromChatResponse(res, model);
     },
   };
 }

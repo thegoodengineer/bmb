@@ -176,12 +176,14 @@ export async function runHealer(opts: HealerRunOptions): Promise<HealerRunResult
         await sink.record('healer_thought', {
           text: block.text.trim().slice(0, 2000),
           turn: turns,
+          model: response.model,
         });
       } else if (block.type === 'thinking' && block.thinking?.trim()) {
         await sink.record('healer_thought', {
           text: block.thinking.trim().slice(0, 2000),
           turn: turns,
           summarized: true,
+          model: response.model,
         });
       }
     }

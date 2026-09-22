@@ -1,6 +1,6 @@
 import type { Env } from './env.js';
-import { chatCompletion } from './healer/openai-compat.js';
-import { compatOptions } from './healer/provider.js';
+import { chatWithFallback } from './healer/openai-compat.js';
+import { compatOptions, modelChain } from './healer/provider.js';
 import { type JudgeAnswers, type JudgeModel, judgeOutputSchema } from './judge.js';
 
 /**
@@ -9,6 +9,7 @@ import { type JudgeAnswers, type JudgeModel, judgeOutputSchema } from './judge.j
  */
 export function openAICompatJudge(env: Env): JudgeModel {
   const opts = compatOptions(env, env.JUDGE_MODEL, 'judge');
+  const models = modelChain(env, env.JUDGE_MODEL);
   return {
     model: opts.model,
     async grade(prompt) {
@@ -16,7 +17,7 @@ export function openAICompatJudge(env: Env): JudgeModel {
         'Return ONLY a JSON object of the form {"answers":[9 booleans],"evidence":[9 short strings]} with exactly nine entries each, in question order.';
       let feedback = '';
       for (let attempt = 1; attempt <= 2; attempt++) {
-        const res = await chatCompletion(opts, {
+        const { res } = await chatWithFallback(opts, models, () => ({
           messages: [
             { role: 'system', content: `${prompt.system}\n\n${schemaNote}` },
             { role: 'user', content: `${prompt.user}${feedback}` },
@@ -24,7 +25,7 @@ export function openAICompatJudge(env: Env): JudgeModel {
           response_format: { type: 'json_object' },
           temperature: 0,
           max_tokens: 1500,
-        });
+        }));
         const text = res.choices?.[0]?.message?.content ?? '';
         const parsed = tryParse(text);
         const valid = judgeOutputSchema.safeParse(parsed);

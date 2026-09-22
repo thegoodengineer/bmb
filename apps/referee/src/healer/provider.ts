@@ -39,15 +39,28 @@ export function resolveModelId(env: Env, requested: string): string {
   return requested === DEFAULT_ANTHROPIC_MODEL && def ? def : requested;
 }
 
-export function compatOptions(env: Env, model: string, label: string): OpenAICompatOptions {
+/**
+ * HEALER_MODEL / JUDGE_MODEL may list fallbacks, comma-separated: the first is primary,
+ * the rest are tried in order when a model's quota is spent.
+ */
+export function modelChain(env: Env, spec: string): string[] {
+  return spec
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((m) => resolveModelId(env, m));
+}
+
+export function compatOptions(env: Env, modelSpec: string, label: string): OpenAICompatOptions {
   const def = PROVIDER_DEFAULTS[env.LLM_PROVIDER];
   const baseUrl = env.LLM_BASE_URL ?? def?.baseUrl;
   if (!baseUrl) throw new Error(`LLM_BASE_URL is required for provider ${env.LLM_PROVIDER}`);
   if (!env.LLM_API_KEY) throw new Error(`LLM_API_KEY is required for provider ${env.LLM_PROVIDER}`);
+  const [primary = ''] = modelChain(env, modelSpec);
   return {
     baseUrl,
     apiKey: env.LLM_API_KEY,
-    model: resolveModelId(env, model),
+    model: primary,
     label,
     ...(def?.headers ? { headers: def.headers } : {}),
   };
@@ -67,5 +80,8 @@ export function healerModel(env: Env): ModelClient {
       ...(env.ANTHROPIC_API_KEY ? { apiKey: env.ANTHROPIC_API_KEY } : {}),
     });
   }
-  return openAICompatModel(compatOptions(env, env.HEALER_MODEL, 'healer'));
+  return openAICompatModel(
+    compatOptions(env, env.HEALER_MODEL, 'healer'),
+    modelChain(env, env.HEALER_MODEL).slice(1),
+  );
 }

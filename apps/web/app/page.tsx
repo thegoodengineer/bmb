@@ -1,13 +1,21 @@
-import { PROBE_IDS } from '@bmb/shared';
+import { Arena } from '@/components/Arena';
+import { publicCatalog } from '@/lib/catalog';
+import { fetchEvents, fetchRecentRounds, type PublicEvent, type PublicRound } from '@/lib/control';
 
-export default function Page() {
-  return (
-    <main className="mx-auto max-w-5xl px-4 py-10">
-      <h1 className="font-mono text-2xl tracking-tight">BREAK MY BACKEND</h1>
-      <p className="mt-2 text-fg-dim">Strangers break a real backend. An AI fixes it. Live.</p>
-      <p className="mt-8 font-mono text-sm text-fg-dim">
-        phase 0 skeleton · probes: {PROBE_IDS.join(' ')}
-      </p>
-    </main>
-  );
+export const dynamic = 'force-dynamic';
+
+const ACTIVE = new Set(['injecting', 'attacked', 'healing', 'healed', 'unhealed', 'resetting']);
+
+export default async function Page() {
+  let rounds: PublicRound[] = [];
+  let events: PublicEvent[] = [];
+  try {
+    rounds = await fetchRecentRounds(30);
+    const shown =
+      rounds.find((r) => ACTIVE.has(r.status)) ?? rounds.find((r) => r.status === 'done');
+    if (shown) events = await fetchEvents(shown.id);
+  } catch {
+    // The client falls back to polling; an unreachable control project renders an empty arena.
+  }
+  return <Arena catalog={publicCatalog()} initialRounds={rounds} initialEvents={events} />;
 }

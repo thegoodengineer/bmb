@@ -32,11 +32,8 @@ const envSchema = z.object({
   LLM_PROVIDER: z.enum(['anthropic', 'groq', 'openrouter', 'openai-compat']).default('anthropic'),
   LLM_API_KEY: z.string().min(1).optional(),
   LLM_BASE_URL: z.string().url().optional(),
-  /** Include the skill's reference files in the H2 prompt (~15k tokens). Off for free tiers. */
-  HEALER_SKILL_REFERENCES: z
-    .enum(['0', '1', 'true', 'false'])
-    .transform((v) => v === '1' || v === 'true')
-    .optional(),
+  /** How much of the skill H2 carries: full | core | compact (default: full on anthropic, compact otherwise). */
+  HEALER_SKILL: z.enum(['full', 'core', 'compact']).optional(),
   SELF_PLAY_EVERY_MIN: z.coerce.number().int().positive().default(60),
   /** Benchmark default 5 min; free tiers spend much of it waiting on rate limits. */
   HEALER_WALL_CLOCK_MS: z.coerce.number().int().positive().default(300_000),

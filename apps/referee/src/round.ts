@@ -91,7 +91,7 @@ export async function runRound(opts: RoundOptions): Promise<RoundResult> {
     result.msToAttacked = attackedMs - injectedAt;
 
     const config = buildConfig(configId, {
-      skillReferences: env.HEALER_SKILL_REFERENCES ?? env.LLM_PROVIDER === 'anthropic',
+      skill: env.HEALER_SKILL ?? (env.LLM_PROVIDER === 'anthropic' ? 'full' : 'compact'),
       wallClockMs: env.HEALER_WALL_CLOCK_MS,
     });
     // Free-tier providers cap tokens per minute; keep every turn small.
@@ -102,7 +102,7 @@ export async function runRound(opts: RoundOptions): Promise<RoundResult> {
       sink,
       allowedTools: config.allowedTools,
       maxCallsPerTool: config.maxCallsPerTool,
-      ...(constrained ? { maxResultChars: 2500 } : {}),
+      ...(constrained ? { maxResultChars: 1800 } : {}),
     });
     const model = opts.model ?? healerModel(env);
 
@@ -120,7 +120,7 @@ export async function runRound(opts: RoundOptions): Promise<RoundResult> {
       sink,
       initialProbes: monitor.latest,
       oracle,
-      ...(constrained ? { liveToolResults: 2, maxTokensPerTurn: 1500 } : {}),
+      ...(constrained ? { liveToolResults: 2, maxTokensPerTurn: 1024 } : {}),
     });
     result.healer = healer;
     if (healer.lastVerdict) result.verdict = healer.lastVerdict;

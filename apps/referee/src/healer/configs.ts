@@ -39,9 +39,42 @@ export function readSkillText(includeReferences = true): string {
   return parts.join('');
 }
 
+/**
+ * How much of the vendored skill H2 carries:
+ *  full    SKILL.md + the nine reference files (~15k tokens; the benchmark definition)
+ *  core    SKILL.md only (~4.3k tokens)
+ *  compact the primitives table and the six app-level recipes (~2k tokens), for providers
+ *          whose free tiers cap a request at 7–8k tokens per minute
+ */
+export type SkillSize = 'full' | 'core' | 'compact';
+
+const COMPACT_SECTIONS = [
+  /^## Fastest Path/,
+  /^## Debug Primitives/,
+  /^### Recipe: SDK returned/,
+  /^### Recipe: HTTP 4xx\/5xx/,
+  /^### Recipe: RLS access issue/,
+  /^### Recipe: Edge function runtime error/,
+  /^### Recipe: Single slow query/,
+  /^### Recipe: Don't know where to start/,
+];
+
+/** The vendored SKILL.md cut to the sections useful for app-level faults. */
+export function compactSkillText(): string {
+  const skill = readSkillText(false).replace(/^---[\s\S]*?---\s*/, '');
+  const sections = skill.split(/^(?=#{2,3} )/m);
+  const kept = sections.filter((s) => COMPACT_SECTIONS.some((re) => re.test(s)));
+  return `# InsForge Debug (compact)\n\n${kept.join('\n').trim()}\n`;
+}
+
+export function skillText(size: SkillSize): string {
+  if (size === 'compact') return compactSkillText();
+  return readSkillText(size === 'full');
+}
+
 export interface BuildOptions {
-  /** Include the skill's nine reference files in H2 (~15k tokens). Default true. */
-  skillReferences?: boolean;
+  /** How much of the skill H2 carries. Default full. */
+  skill?: SkillSize;
   /** Wall clock per round; the benchmark default is 5 minutes. */
   wallClockMs?: number;
 }
@@ -71,7 +104,7 @@ export function buildConfig(id: HealerConfigId, opts: BuildOptions = {}): Healer
       return {
         id,
         label: 'agent+skill',
-        systemPrompt: `${base}\n\n${readPrompt('with-skill-preamble.md')}\n\n${readSkillText(opts.skillReferences ?? true)}`,
+        systemPrompt: `${base}\n\n${readPrompt('with-skill-preamble.md')}\n\n${skillText(opts.skill ?? 'full')}`,
         maxToolCalls: 25,
         maxWallClockMs: wall,
         allowedTools: ALL_TOOL_NAMES,

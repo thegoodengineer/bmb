@@ -264,6 +264,8 @@ export async function chatWithFallback(
       return { res, model };
     } catch (e) {
       lastError = e;
+      // Too large for this model's per-minute cap: the next model may have a bigger one.
+      if (e instanceof OpenAICompatError && e.status === 413) continue;
       if (!isQuotaExhausted(e)) throw e;
       exhaustedUntil.set(model, Date.now() + (e.retryAfterMs ?? 60_000));
     }

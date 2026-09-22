@@ -282,6 +282,10 @@ export const FAULTS: readonly Fault[] = [...singles, ...decoys, ...combos];
 
 export const FAULT_BY_ID: ReadonlyMap<FaultId, Fault> = new Map(FAULTS.map((f) => [f.id, f]));
 
+export function isFaultId(s: string): s is FaultId {
+  return FAULT_BY_ID.has(s as FaultId);
+}
+
 export function getFault(id: string): Fault | undefined {
   return FAULT_BY_ID.get(id as FaultId);
 }

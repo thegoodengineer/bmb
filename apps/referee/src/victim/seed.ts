@@ -58,6 +58,14 @@ export async function seedVictim(env: Env): Promise<SeedReport> {
     sqlOpts,
   );
 
+  // Strays: a probe note P3 created but could not delete (a fault mid-cycle). P4 checks the
+  // exact count, so anything outside the deterministic set must go.
+  await dbQuery(
+    `delete from public.notes where owner_id = '${probeUserId}'
+       and id not in (select md5('bmb-probe-note-' || i)::uuid from generate_series(1, ${PROBE_NOTE_COUNT}) i)`,
+    sqlOpts,
+  );
+
   // Probe notes: deterministic ids, bodies 200–800 chars, created_at spread over the past.
   await dbQuery(
     `insert into public.notes (id, owner_id, title, body, created_at, updated_at)

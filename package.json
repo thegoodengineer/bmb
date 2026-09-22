@@ -14,7 +14,9 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "docs:catalog": "pnpm --filter @bmb/shared build && node packages/shared/scripts/gen-catalog.mjs",
+    "web:package": "pnpm --filter @bmb/shared build && node scripts/build-web-deploy.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",

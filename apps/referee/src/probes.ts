@@ -94,19 +94,28 @@ export async function runProbeSuite(env: Env): Promise<ProbeResult[]> {
   results.push(
     await timed('P2', async () => {
       const { client, userId } = need();
-      const t0 = Date.now();
-      const { data, error, status } = await client.database
-        .from('notes')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(20);
-      const ms = Date.now() - t0;
+      const list = async () => {
+        const t0 = Date.now();
+        const res = await client.database
+          .from('notes')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(20);
+        return { ...res, ms: Date.now() - t0 };
+      };
+      let attempt = await list();
+      // One retry when only latency failed: the first request after any DDL pays PostgREST's
+      // schema-cache reload (~1.5 s). A missing index is slow on every request, so it still trips.
+      if (!attempt.error && attempt.ms >= env.P2_MAX_MS) attempt = await list();
+      const { data, error, status, ms } = attempt;
       if (error) return `list_notes ${describeError(error)}`;
       if (status !== 200) return `list_notes status ${status}`;
       const rows = (data ?? []) as Note[];
       if (rows.length !== 20) return `expected 20 rows, got ${rows.length}`;
       const foreign = rows.filter((r) => r.owner_id !== userId).length;
       if (foreign > 0) return `${foreign} rows not owned by probe user`;
+      const malformed = rows.find((r) => typeof r.title !== 'string' || typeof r.body !== 'string');
+      if (malformed) return `row shape unexpected: keys ${Object.keys(malformed).join(',')}`;
       if (ms >= env.P2_MAX_MS) return `list_notes took ${ms}ms (limit ${env.P2_MAX_MS}ms)`;
       return undefined;
     }),
@@ -140,7 +149,9 @@ export async function runProbeSuite(env: Env): Promise<ProbeResult[]> {
       if (typeof data !== 'number' || !Number.isInteger(data)) {
         return `note_count returned ${JSON.stringify(data)}`;
       }
-      if (data < PROBE_NOTE_COUNT) return `note_count = ${data}, expected >= ${PROBE_NOTE_COUNT}`;
+      // Exact: the probe user owns exactly PROBE_NOTE_COUNT notes (P3 deletes what it creates,
+      // reset removes strays). A wrong-owner count (F09) is huge, not an error, so >= would pass.
+      if (data !== PROBE_NOTE_COUNT) return `note_count = ${data}, expected ${PROBE_NOTE_COUNT}`;
       return undefined;
     }),
   );

@@ -10,9 +10,14 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "biome check .",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "probes": "tsx src/cli/probes.ts",
-    "seed": "tsx src/cli/seed.ts"
+    "seed": "tsx src/cli/seed.ts",
+    "reset": "tsx src/cli/reset.ts",
+    "test:faults": "vitest run test/faults.test.ts",
+    "heal": "tsx src/cli/heal.ts",
+    "test:unit": "vitest run test/isolation.test.ts test/healer-denial.test.ts",
+    "eval": "tsx src/cli/eval.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

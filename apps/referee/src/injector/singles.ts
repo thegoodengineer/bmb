@@ -205,15 +205,25 @@ export const F08: Injector = {
     );
   },
   async referenceFix(ctx) {
-    await sql(ctx, 'alter table public.notes drop constraint if exists notes_title_impossible');
+    // The baseline defines no CHECK constraints on notes. Drop every one, whatever its name,
+    // so a replacement rule a healer added does not outlive the round.
+    const rows = await sql<{ name: string }>(
+      ctx,
+      `select quote_ident(k.conname) as name from pg_constraint k
+         join pg_class c on c.oid = k.conrelid join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname='public' and c.relname='notes' and k.contype='c'`,
+    );
+    for (const { name } of rows) await sql(ctx, `alter table public.notes drop constraint ${name}`);
   },
   async artifactPresent(ctx) {
-    // The app defines no CHECK constraints on notes, so any CHECK constraint is the artifact.
+    // The fault is the rule itself (a title shorter than one character), under any name. A
+    // replacement the probes accept, such as length(title) > 0, is a valid repair.
     return exists(
       ctx,
       `select 1 from pg_constraint k join pg_class c on c.oid = k.conrelid
          join pg_namespace n on n.oid = c.relnamespace
-        where n.nspname='public' and c.relname='notes' and k.contype='c'`,
+        where n.nspname='public' and c.relname='notes' and k.contype='c'
+          and pg_get_constraintdef(k.oid) ~ 'length[(]title[)] < 1([^0-9.]|$)'`,
     );
   },
 };

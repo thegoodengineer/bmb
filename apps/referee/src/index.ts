@@ -45,7 +45,8 @@ async function main(): Promise<void> {
   await untilHealthy(env, idle, 'boot');
   idle.start(false);
 
-  let lastSelfPlayAt = 0;
+  // Count boot as a self-play so a restart does not spend a round of the model budget.
+  let lastSelfPlayAt = Date.now();
   let lastActivityAt = Date.now();
 
   while (true) {

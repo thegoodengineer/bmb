@@ -1,6 +1,7 @@
 import { type FaultId, faultsOfTier, getFault, type ProbeId } from '@bmb/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadEnv } from '../src/env.js';
+import { sql } from '../src/injector/helpers.js';
 import {
   DECOY_INJECTORS,
   type Injector,
@@ -194,5 +195,46 @@ describe.skipIf(!env)('fault injectors against the victim', () => {
         });
       });
     }
+  });
+
+  // Repairs healers actually made in public rounds (docs/MISSES.md). The oracle judges state,
+  // so a correct repair under a healer's own naming must count, and a workaround must not.
+  describe('healer repairs from public rounds', () => {
+    it('F08: re-adding the constraint name with a sane rule is a repair', async () => {
+      const inj = injectorFor('F08');
+      await withFix(ctx, [inj], async () => {
+        await inj.inject(ctx);
+        expect(await inj.artifactPresent(ctx)).toBe(true);
+        expect((await waitForRed(e)).size).toBeGreaterThan(0);
+        await sql(ctx, 'alter table notes drop constraint notes_title_impossible');
+        await sql(
+          ctx,
+          'alter table notes add constraint notes_title_impossible check (length(title) > 0)',
+        );
+        expect(await waitForGreenStreak(e)).toBe(true);
+        expect(await inj.artifactPresent(ctx), 'sane replacement read as the fault').toBe(false);
+      });
+      // The reset removes the replacement too: the baseline has no CHECK constraints.
+      const left = await sql(
+        ctx,
+        `select 1 from pg_constraint k join pg_class c on c.oid = k.conrelid
+          where c.relname = 'notes' and k.contype = 'c'`,
+      );
+      expect(left).toHaveLength(0);
+    });
+
+    it('F05: a generated body column beside content is a workaround, and the reset survives it', async () => {
+      const inj = injectorFor('F05');
+      await withFix(ctx, [inj], async () => {
+        await inj.inject(ctx);
+        await sql(
+          ctx,
+          'alter table notes add column body text generated always as (content) stored',
+        );
+        expect(await inj.artifactPresent(ctx), 'workaround read as a repair').toBe(true);
+      });
+      expect(await inj.artifactPresent(ctx)).toBe(false);
+      expect(await waitForGreenStreak(e)).toBe(true);
+    });
   });
 });

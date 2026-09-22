@@ -25,10 +25,10 @@ describe('fault catalog invariants', () => {
     }
   });
 
-  it('has 10 singles, 4 decoys, 4 combos', () => {
+  it('has 10 singles, 4 decoys, 5 combos', () => {
     expect(FAULTS.filter((f) => f.tier === 'single')).toHaveLength(10);
     expect(FAULTS.filter((f) => f.tier === 'decoy')).toHaveLength(4);
-    expect(FAULTS.filter((f) => f.tier === 'combo')).toHaveLength(4);
+    expect(FAULTS.filter((f) => f.tier === 'combo')).toHaveLength(5);
   });
 
   it('points: singles 10, combos 30, decoys 0', () => {

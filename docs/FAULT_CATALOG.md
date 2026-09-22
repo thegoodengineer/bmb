@@ -27,6 +27,7 @@ it lives in the referee process only and is never shown to the healer.
 | C02 | combo | Two Fronts | Two different things break at once. | 30 |
 | C03 | combo | Masked | One failure hides another. | 30 |
 | C04 | combo | Loud and Quiet | One thing screams, one thing whispers. | 30 |
+| C05 | combo | Double Silence | Two things are subtly wrong. Neither screams. | 30 |
 
 ## Ground truth (referee only)
 
@@ -50,6 +51,7 @@ it lives in the referee process only and is never shown to the healer.
 | C02 | summarize edge function AND notes table trigger notes_block | function throws on invoke; a BEFORE INSERT trigger raises | P3, P5 | F04 + F06 |
 | C03 | notes table schema (column body) AND database function note_count() | column body renamed to content; note_count() dropped | P2, P3, P4, P5 | F05 + F07 |
 | C04 | notes table index notes_owner_created_idx AND trigger notes_touch | index dropped (slow listing); update trigger dropped (stale updated_at) | P2, P6 | F02 + F10 |
+| C05 | database function note_count() body AND notes table trigger notes_touch | predicate flipped to owner_id <> auth.uid(); BEFORE UPDATE trigger dropped | P4, P6 | F09 + F10 |
 
 ## Probes
 
@@ -62,4 +64,4 @@ it lives in the referee process only and is never shown to the healer.
 | P5 | invoke summarize | 200, non-empty summary, words > 0 |
 | P6 | update_note | 200 and updated_at advanced |
 
-Singles: 10 · Decoys: 4 · Combos: 4
+Singles: 10 · Decoys: 4 · Combos: 5

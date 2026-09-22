@@ -251,7 +251,7 @@ export const F09: Injector = {
     );
     if (!def) return true; // missing entirely: still not the working function
     // Also catch NOT (owner_id = ...) and IS DISTINCT FROM rewrites.
-    return /owner_id\s*(<>|!=)|NOT\s*\(\s*owner_id\s*=|owner_id\s+IS\s+DISTINCT\s+FROM/.test(def);
+    return /owner_id\s*(<>|!=)|NOT\s*\(\s*owner_id\s*=|owner_id\s+IS\s+DISTINCT\s+FROM/i.test(def);
   },
 };
 

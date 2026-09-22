@@ -236,9 +236,59 @@ function stripTrailingSemicolon(sql: string): string {
   return sql.trim().replace(/;\s*$/, '');
 }
 
+/**
+ * The statement's structure with quoted text removed: dollar-quoted bodies ($$…$$,
+ * $tag$…$tag$), string literals, quoted identifiers and comments become a single space.
+ * Statement counting and keyword checks run on this, so a function body full of `;` is one
+ * statement and `select 'drop'` is a read. Deny-list checks still run on the full text, so a
+ * dangerous call hidden in a function body is caught.
+ */
+export function sqlSkeleton(sql: string): string {
+  let out = '';
+  let i = 0;
+  while (i < sql.length) {
+    const rest = sql.slice(i);
+    const dollar = rest.match(/^\$([A-Za-z_][A-Za-z0-9_]*)?\$/);
+    if (dollar) {
+      const tag = dollar[0];
+      const end = sql.indexOf(tag, i + tag.length);
+      i = end < 0 ? sql.length : end + tag.length;
+      out += ' ';
+      continue;
+    }
+    const ch = sql[i];
+    if (ch === "'" || ch === '"') {
+      let j = i + 1;
+      while (j < sql.length) {
+        if (sql[j] === ch && sql[j + 1] === ch) j += 2;
+        else if (sql[j] === ch) break;
+        else j++;
+      }
+      i = j + 1;
+      out += ' ';
+      continue;
+    }
+    if (rest.startsWith('--')) {
+      const nl = sql.indexOf('\n', i);
+      i = nl < 0 ? sql.length : nl;
+      out += ' ';
+      continue;
+    }
+    if (rest.startsWith('/*')) {
+      const end = sql.indexOf('*/', i + 2);
+      i = end < 0 ? sql.length : end + 2;
+      out += ' ';
+      continue;
+    }
+    out += ch;
+    i++;
+  }
+  return out;
+}
+
 /** Returns a rejection reason, or undefined when the SQL is acceptable read-mode SQL. */
 export function readSqlViolation(sql: string): string | undefined {
-  const s = stripTrailingSemicolon(sql);
+  const s = stripTrailingSemicolon(sqlSkeleton(sql));
   if (!READ_START.test(s)) return 'db_query only accepts SELECT, EXPLAIN or WITH statements';
   if (s.includes(';')) return 'db_query accepts exactly one statement';
   if (WRITE_WORDS.test(s)) return 'db_query is read-only; write keywords are not allowed';
@@ -247,11 +297,14 @@ export function readSqlViolation(sql: string): string | undefined {
 
 /** Returns a rejection reason, or undefined when the SQL is acceptable DDL for public. */
 export function writeSqlViolation(sql: string): string | undefined {
-  const s = stripTrailingSemicolon(sql);
-  if (!DDL_START.test(s)) return 'db_execute accepts CREATE, ALTER, DROP, GRANT, REVOKE or COMMENT';
-  if (s.includes(';')) return 'db_execute accepts exactly one statement';
-  if (FORBIDDEN_SCHEMAS.test(s)) return 'only the public schema may be modified';
-  for (const [re, why] of DENY_PATTERNS) if (re.test(s)) return why;
+  const skeleton = stripTrailingSemicolon(sqlSkeleton(sql));
+  const full = stripTrailingSemicolon(sql);
+  if (!DDL_START.test(skeleton)) {
+    return 'accepts CREATE, ALTER, DROP, GRANT, REVOKE or COMMENT';
+  }
+  if (skeleton.includes(';')) return 'accepts exactly one statement';
+  if (FORBIDDEN_SCHEMAS.test(full)) return 'only the public schema may be modified';
+  for (const [re, why] of DENY_PATTERNS) if (re.test(full)) return why;
   return undefined;
 }
 
@@ -411,7 +464,7 @@ export class HealerToolset {
       case 'run_migration_sql': {
         const sql = String(input.sql);
         const violation = writeSqlViolation(sql);
-        if (violation) return deny(violation);
+        if (violation) return deny(`${tool} ${violation}`);
         if (tool === 'run_migration_sql') this.migrations.push(sql);
         const res = await this.cli(['db', 'query', stripTrailingSemicolon(sql)]);
         await this.opts.sink.record('fix_applied', { tool, sql, ok: !res.isError });

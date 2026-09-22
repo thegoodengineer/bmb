@@ -209,7 +209,10 @@ export async function chatCompletion(
       return json;
     }
     const retryAfter = Number(res.headers.get('retry-after'));
-    const retryable = res.status === 429 || res.status >= 500;
+    // Groq returns 400 'failed_generation' when the model emits a malformed tool call; the
+    // same request usually succeeds on a second try.
+    const malformedGeneration = res.status === 400 && /failed_generation|Parsing failed/.test(text);
+    const retryable = res.status === 429 || res.status >= 500 || malformedGeneration;
     // A long Retry-After means a daily quota is spent: fail this round now rather than
     // freezing the referee (and the public queue) for minutes or hours.
     if (res.status === 429 && Number.isFinite(retryAfter) && retryAfter > MAX_RETRY_AFTER_S) {

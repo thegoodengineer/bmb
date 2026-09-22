@@ -81,6 +81,37 @@ describe('write gate and SQL filters', () => {
     expect(denied.length).toBe(cases.length);
   });
 
+  it('treats a function body with semicolons as one statement', () => {
+    const plpgsql = `create or replace function public.touch_updated_at() returns trigger
+      language plpgsql as $$
+      begin
+        new.updated_at = now();
+        return new;
+      end;
+      $$;`;
+    expect(writeSqlViolation(plpgsql)).toBeUndefined();
+    const tagged = `create function public.f() returns int language sql as $body$ select 1; $body$`;
+    expect(writeSqlViolation(tagged)).toBeUndefined();
+    const quoted = `comment on table public.notes is 'a; b; c'`;
+    expect(writeSqlViolation(quoted)).toBeUndefined();
+  });
+
+  it('still denies dangerous calls hidden inside a function body', () => {
+    const sneaky = `create function public.f() returns void language plpgsql as $$
+      begin perform pg_sleep(10); end; $$`;
+    expect(writeSqlViolation(sneaky)).toMatch(/pg_sleep/);
+    const truncating = `create function public.g() returns void language plpgsql as $$
+      begin truncate public.notes; end; $$`;
+    expect(writeSqlViolation(truncating)).toMatch(/TRUNCATE/);
+    const twoStatements = `create index a on public.notes(id); drop table public.notes`;
+    expect(writeSqlViolation(twoStatements)).toMatch(/exactly one statement/);
+  });
+
+  it('db_query ignores keywords inside string literals', () => {
+    expect(readSqlViolation(`select 'drop table notes; delete' as label`)).toBeUndefined();
+    expect(readSqlViolation(`select * from pg_proc where prosrc like '%;%'`)).toBeUndefined();
+  });
+
   it('db_query accepts only single read statements', () => {
     expect(readSqlViolation('select * from pg_policies')).toBeUndefined();
     expect(readSqlViolation('  EXPLAIN select 1')).toBeUndefined();

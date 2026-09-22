@@ -251,9 +251,9 @@ Runs every **3 seconds** while a round is active, every **15 seconds** when idle
 | # | Probe | Pass condition |
 |---|---|---|
 | P1 | `login` | token obtained |
-| P2 | `list_notes` (`select * order by created_at desc limit 20`) | 200, exactly 20 rows, all `owner_id` = probe user, `ms < 400` |
+| P2 | `list_notes` (`select * order by created_at desc limit 20`) | 200, exactly 20 rows, all `owner_id` = probe user, every row has `title` and `body`, `ms < P2_MAX_MS` (400 next to the DB); one retry when only latency failed, because the first request after DDL pays PostgREST's schema-cache reload |
 | P3 | `create_note` then `delete_note` | both succeed, created row round-trips `title`/`body` |
-| P4 | `rpc note_count` | returns integer ≥ 25 |
+| P4 | `rpc note_count` | returns exactly 25 (the probe user's real count; F09's wrong-owner count is huge, not an error) |
 | P5 | `invoke summarize` on a known note id, via the SDK as the probe user | 200, `summary` non-empty, `words > 0` |
 | P6 | `update_note` on a probe-owned note | 200 and `updated_at` advanced |
 
@@ -269,14 +269,14 @@ Data shape: see the `Fault` interface in `faults.ts`. Injection code lives in `a
 
 | id | name | inject | ground truth | scope | reference fix |
 |---|---|---|---|---|---|
-| F01 | Lockout | `drop policy notes_select_own; create policy notes_select_own on notes for select to authenticated using (false);` | notes RLS / select policy denies all | P2, P5, P4 | restore policy |
+| F01 | Lockout | `drop policy notes_select_own; create policy notes_select_own on notes for select to authenticated using (false);` | notes RLS / select policy denies all | P2, P3, P4, P5, P6 (P3: insert…select needs the select policy; P6: update returning) | restore policy |
 | F02 | Molasses | `drop index notes_owner_created_idx;` | notes index / missing composite index | P2 | recreate index |
 | F03 | Revoked | `revoke select on public.notes from authenticated;` | notes grants / SELECT revoked | P2, P5, P4, P6 | re-grant |
-| F04 | Dead Function | `functions deploy summarize --file <broken.ts>` with a top-level `throw` | summarize edge function / runtime throw on invoke | P5 | redeploy good source |
+| F04 | Dead Function | `functions deploy summarize --file <broken.ts>` whose handler throws (a module-level throw fails the deployment itself) | summarize edge function / runtime throw on invoke | P5 | redeploy good source |
 | F05 | Renamed | `alter table notes rename column body to content;` | notes schema / column `body` renamed | P2 (shape), P3, P5 | rename back |
 | F06 | Poison Pill | BEFORE INSERT trigger `notes_block` that raises | notes trigger / insert trigger raises | P3 | drop trigger + function |
 | F07 | Vanished RPC | `drop function public.note_count();` | RPC / `note_count` dropped | P4 | recreate + grant |
-| F08 | Impossible Rule | `check (length(title) < 1)` constraint | notes constraint / CHECK makes inserts impossible | P3 | drop constraint |
+| F08 | Impossible Rule | `check (length(title) < 1) not valid` constraint (plain ADD CONSTRAINT fails on existing rows) | notes constraint / CHECK makes inserts and updates impossible | P3, P6 | drop constraint |
 | F09 | Wrong Owner | `note_count` body uses `owner_id <> auth.uid()` | RPC / logic bug returns others' count | P4 (value wrong, not error) | restore body |
 | F10 | Quiet Update | `drop trigger notes_touch on notes;` | trigger / `updated_at` no longer maintained | P6 | recreate trigger |
 
@@ -397,7 +397,7 @@ Strict JSON `{ answers: boolean[9], evidence: string[9], score, pass, dims: {loc
 
 ### 9.3 Behavior
 - `AttackPanel`: cards from the catalog (`id`, `name`, `blurb`, `points`, tier). Decoy dropdown per single. Combos tab. Disabled during cooldown or while the session already has a queued round.
-- `POST /api/attack` `{ faultId, decoyId?, handle? }` → validate against catalog, cookie-session cooldown (**1 attack per session per 3 minutes**, keyed by session cookie + IP hash), insert `rounds(status='queued')`, return `{ roundId, position }`.
+- `POST /api/attack` `{ faultId, decoyId?, handle? }` → validate against catalog, then call the control project's `enqueue_round` RPC (security definer) with keyed hashes of the session cookie and IP. The RPC enforces **1 attack per session or IP per 3 minutes**, one queued round per session, and the queue cap, and returns `{ roundId, position }`. Anon has no insert privilege on `rounds`.
 - `HealLog`: subscribes to the control project's realtime channel (`realtime.channels` pattern `round:%`; a trigger on `events` calls `realtime.publish`). Fallback: poll `/api/events?since=` every 2s. Active round live; previous round collapses into a replay accordion. Tool results collapsible; thoughts dimmed; diagnosis gold; `healed` green; `gave_up` red.
 - `Scoreboard`: `GET /api/scoreboard` (cached 10s) with a "by fault" table.
 - `WallOfFame`: last 20 unhealed rounds.

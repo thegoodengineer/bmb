@@ -123,6 +123,26 @@ New `public` tables get `SELECT, INSERT, UPDATE, DELETE` for **both** `anon` and
 - The first probe cycle after an idle period is consistently cold (P1 ~1.6 s, P2 0.7–1.8 s, P5 ~1.4 s); cycles 2+ are ~260–600 ms per probe from India. The `probes` CLI therefore passes on a streak of 3 consecutive green cycles, which is the oracle's own condition.
 - The referee runs the CLI as `node <@insforge/cli bin>` with `cwd = victim/` and no shell, pinned to 0.2.8 in `apps/referee/package.json`; `package.json` has no `exports` block so `require.resolve('@insforge/cli/package.json')` works. `NO_COLOR=1 CI=1` keeps output clean.
 
+### I. Phases 2–5 findings
+
+- **`functions deploy` flakes.** Across two full runs of the injector suite, both `summarize` and `legacy-ping` deploys sometimes returned `{"success":false, "deployment":{"status":"failed"}}` with a 502 HTML page in `buildLogs`, or `{"error":"Function deployment failed"}` with no logs at all, for several minutes; identical sources deployed fine minutes later. `deployFunction()` now retries six times with 10/20/40/60/60 s backoff.
+- **Module-level throw = failed deployment.** Deno Subhosting evaluates the module at deploy time; `throw new Error('boom')` at top level never becomes a deployed function. Verified by deploying three variants back to back: handler-throw → success, plain 500 response → success, throw-on-POST → success. F04 now throws inside the handler.
+- **ADD CONSTRAINT validates existing rows.** `alter table notes add constraint … check (length(title) < 1)` fails with `violated by some row`; F08 uses `NOT VALID`, which still enforces the check on new inserts and updates. Consequence discovered by the test: the CHECK also blocks P6's title update, so P6 is in F08's scope.
+- **`insert().select()` needs the select policy.** With the select policy at `USING (false)`, P3's create-and-read fails with `42501 new row violates row-level security policy`, so P3 is in F01's scope (and C01's).
+- **Schema-cache reload after DDL.** The first `list_notes` after any DDL on `notes` took 1.5–1.8 s from India (≈0.3 s steady state), tripping the P2 latency limit and failing five cases as "out of scope" in one run. P2 now retries once when only latency failed; a missing index is slow on both attempts (447–461 ms server-side at 400k rows), so F02 still trips.
+- **Anon key for the control project.** `secrets get ANON_KEY --json` → `{ key, value }`; with it, `enqueue_round` (security definer) returns `{roundId, position}`, a second call inside 3 minutes returns `COOLDOWN:<seconds>` as the PostgREST error message, a direct `insert` into `rounds` returns `42501`, and selecting `attacker_session` returns `42501` thanks to column-level grants on the base table plus `security_invoker` views.
+- **Realtime from migrations.** `insert into realtime.channels (pattern, …)` and `perform realtime.publish(...)` from `security definer` trigger functions in `public` work in a migration file; `metadata --json` then lists the channels. The event name is the second argument, so the web client registers one handler per event kind.
+- **`.gitkeep` in `migrations/`** breaks `db migrations up --all` on every project (strict filename validation); keep the directory non-empty with a real migration instead.
+- **`db query` from India costs ~2–4 s per call** (node start + TLS + us-east round trip). A full reset (10 reference fixes, 4 decoy cleanups, seed, 14 artifact checks) takes ~135 s from here; the same calls from a compute service in `iad` will be several times faster.
+
+### J. Web deployment through InsForge (Phase 8)
+
+- `deployments deploy <dir>` zips the directory (built-in excludes: `node_modules`, `.git`, `.next`, `dist`, `build`, `.env*`, `.insforge`) and builds it on Vercel as a standalone project. Persistent env vars: `deployments env set K V`.
+- Uploading the **monorepo root** with a legacy `builds: [{src: 'apps/web/package.json', use: '@vercel/next'}]` built (once the web build compiled `@bmb/shared` first) but served **404 on every path**: the nested app's output is not mounted at the root.
+- Uploading a **standalone package** works: `scripts/build-web-deploy.mjs` copies `apps/web`, vendors the built shared package under `vendor/shared/lib` (not `dist`, which the uploader strips) as a `file:` dependency, and writes `vercel.json` with `framework: nextjs`. Without that hint Vercel treated it as a static site (`STATIC_BUILD_NO_OUT_DIR`). Result: `READY`; https://zfy5cb5v.insforge.site serves the page and the API routes, and an attack enqueued from a fresh session returned `{roundId, position: 2}`.
+- The deploy command reports failures as `{"error": …}` on stdout with exit code 0, like `db query`.
+- Under OneDrive, `rmSync` on a directory the sync client holds fails with `EBUSY`; the packager writes to the OS temp dir by default.
+
 ## Decisions taken from these notes
 
 1. Develop Phases 1–7 against the cloud project `bmb-victim` (`y2z8xzxf.us-east`, created 2026-09-22). Local is optional for fast injector iteration only.

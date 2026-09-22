@@ -167,6 +167,9 @@ export async function runHealer(opts: HealerRunOptions): Promise<HealerRunResult
         try {
           response = await call(1);
         } catch (e2) {
+          // The retry runs against the same wall clock: running out of it is the healer's
+          // budget, not a provider failure (which would make the round invalid).
+          if (e2 instanceof DeadlineError) return finish('budget_time');
           return finish('error', e2 instanceof Error ? e2.message : String(e2));
         }
       } else {

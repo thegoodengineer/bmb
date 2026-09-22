@@ -248,6 +248,29 @@ describe('runner with a scripted model', () => {
     expect(Date.now() - started).toBeLessThan(2000);
   });
 
+  it('a deadline during the oversized-request retry is the time budget, not a provider error', async () => {
+    const sink = new MemorySink();
+    let calls = 0;
+    const model = {
+      model: 'too-large-then-hung',
+      create: () => {
+        calls++;
+        if (calls === 1) return Promise.reject(Object.assign(new Error('413'), { status: 413 }));
+        return new Promise<never>(() => {});
+      },
+    };
+    const result = await runHealer({
+      config: { ...buildConfig('H3'), maxWallClockMs: 300 },
+      model,
+      toolset: makeToolset(sink),
+      sink,
+      initialProbes: RED,
+      oracle: async () => ({ healed: false, greenStreak: 0, artifacts: {}, reason: 'probes_red' }),
+    });
+    expect(calls).toBe(2);
+    expect(result.outcome).toBe('budget_time');
+  });
+
   it('H1 restricts the tool list and per-tool caps', async () => {
     const sink = new MemorySink();
     const cfg = buildConfig('H1');

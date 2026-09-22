@@ -1,0 +1,3 @@
+# Debugging skill
+
+The reference below is the platform's own debugging skill. Its commands are exposed to you as tools with these names: `logs <source>` → `get_logs`, `diagnose logs|db|advisor|metrics` → `diagnose`, `diagnose --ai` → `diagnose_ai`, `db policies` → `db_policies`, `db query` → `db_query` (read-only), `metadata` → `get_metadata`, `functions list` → `list_functions`, `functions code` → `get_function_source`. Commands it mentions that you do not have (deployments, secrets, backups, memory, feedback) are unavailable; ignore them. Fixes go through `db_execute`, `run_migration_sql` or `deploy_function`.

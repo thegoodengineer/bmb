@@ -55,7 +55,7 @@ points = base                 if the round is NOT healed
        = 0                    if healed with a passing diagnosis
 ```
 
-Invalid rounds (the injector failed to make an in-scope probe red within 30 s) score 0 and are excluded from every aggregate.
+Invalid rounds score 0 and are excluded from every aggregate and from the wall of fame. A round is invalid when the injector failed to make an in-scope probe red within 30 s, or when the model provider failed (a spent quota, a request over its per-minute cap, or a malformed tool call it could not correct): neither says anything about the healer's reasoning.
 
 ## Healer aggregates
 

@@ -139,6 +139,14 @@ export async function runRound(opts: RoundOptions): Promise<RoundResult> {
       if (verdict) result.verdict = verdict;
     }
 
+    // The provider failed (quota, oversized request, malformed output): no verdict on the
+    // healer's reasoning is possible, so the round is invalid, like a failed injection.
+    if (!verdict?.healed && healer.outcome === 'error') {
+      result.status = 'invalid';
+      result.unhealedReason = `provider_error: ${healer.error ?? 'unknown'}`.slice(0, 500);
+      return result;
+    }
+
     if (verdict?.healed) {
       result.status = 'healed';
       result.healedAt = new Date(healedAtMs ?? Date.now()).toISOString();

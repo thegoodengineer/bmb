@@ -159,7 +159,7 @@ for (const faultIds of plan) {
         const { points, hasDecoy } = roundPoints(faultIds);
         await control
           .updateRound(roundId, {
-            status: 'done',
+            status: result.status === 'invalid' ? 'invalid' : 'done',
             ended_at: new Date().toISOString(),
             healed: result.status === 'invalid' ? null : healed,
             judge: verdict ?? null,

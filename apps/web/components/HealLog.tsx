@@ -63,6 +63,13 @@ function label(e: PublicEvent): { text: string; cls: string; detail?: string | u
     case 'healed':
       return { text: '✔ HEALED', cls: 'text-green font-semibold' };
     case 'gave_up':
+      if (p.outcome === 'error') {
+        return {
+          text: '✘ model provider unavailable (round not scored)',
+          cls: 'text-fg-dim font-semibold',
+          detail: String(p.error ?? ''),
+        };
+      }
       return { text: `✘ ${String(p.outcome ?? 'gave up')}`, cls: 'text-red font-semibold' };
     case 'judge':
       return {

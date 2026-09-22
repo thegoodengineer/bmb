@@ -182,8 +182,10 @@ async function main(): Promise<void> {
     const score =
       result.status === 'invalid' ? 0 : attackerPoints({ points, hasDecoy, healed, judgePass });
 
+    // Invalid rounds (injector or provider failure) stay 'invalid' so every aggregate and the
+    // wall of fame, which read 'done' rounds only, exclude them.
     await control.updateRound(row.id, {
-      status: 'done',
+      status: result.status === 'invalid' ? 'invalid' : 'done',
       ended_at: new Date().toISOString(),
       healed: result.status === 'invalid' ? null : healed,
       healed_at: result.healedAt ?? null,

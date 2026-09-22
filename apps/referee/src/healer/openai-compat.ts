@@ -176,6 +176,7 @@ export async function chatCompletion(
 ): Promise<ChatResponse> {
   const maxRetries = opts.maxRetries ?? 5;
   let attempt = 0;
+  let malformedCount = 0;
   while (true) {
     attempt++;
     let res: Response;
@@ -211,8 +212,13 @@ export async function chatCompletion(
     const retryAfter = Number(res.headers.get('retry-after'));
     // Groq returns 400 'failed_generation' when the model emits a malformed tool call; the
     // same request usually succeeds on a second try.
-    const malformedGeneration = res.status === 400 && /failed_generation|Parsing failed/.test(text);
-    const retryable = res.status === 429 || res.status >= 500 || malformedGeneration;
+    const malformedGeneration =
+      res.status === 400 &&
+      /failed_generation|Parsing failed|Tool call validation failed/.test(text);
+    if (malformedGeneration) malformedCount++;
+    // One retry for a malformed generation; after that the next model in the chain gets it.
+    const retryable =
+      res.status === 429 || res.status >= 500 || (malformedGeneration && malformedCount <= 1);
     // A long Retry-After means a daily quota is spent: fail this round now rather than
     // freezing the referee (and the public queue) for minutes or hours.
     if (res.status === 429 && Number.isFinite(retryAfter) && retryAfter > MAX_RETRY_AFTER_S) {
@@ -267,8 +273,9 @@ export async function chatWithFallback(
       return { res, model };
     } catch (e) {
       lastError = e;
-      // Too large for this model's per-minute cap: the next model may have a bigger one.
-      if (e instanceof OpenAICompatError && e.status === 413) continue;
+      // Too large for this model's per-minute cap, or a malformed tool call it could not
+      // correct: the next model may do better.
+      if (e instanceof OpenAICompatError && (e.status === 413 || e.status === 400)) continue;
       if (!isQuotaExhausted(e)) throw e;
       exhaustedUntil.set(model, Date.now() + (e.retryAfterMs ?? 60_000));
     }

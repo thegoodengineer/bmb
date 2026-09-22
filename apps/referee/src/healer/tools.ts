@@ -352,6 +352,8 @@ export class HealerToolset {
   readonly migrations: string[] = [];
   private readonly counts = new Map<ToolName, number>();
   private unlocked = false;
+  /** Write calls refused by the gate; reported once when the gate opens. */
+  private refusedBeforeGate = 0;
 
   constructor(private readonly opts: ToolsetOptions) {}
 
@@ -416,6 +418,7 @@ export class HealerToolset {
     await this.opts.sink.record('tool_call', { name: tool, input: redactForLog(tool, input) });
 
     if ((WRITE_TOOLS as readonly string[]).includes(tool) && !this.unlocked) {
+      this.refusedBeforeGate++;
       return deny('write tools are locked until you call submit_diagnosis');
     }
     this.counts.set(tool, used + 1);
@@ -458,7 +461,16 @@ export class HealerToolset {
         this.diagnoses.push({ at, diagnosis });
         this.unlocked = true;
         await this.opts.sink.record('diagnosis', { ...diagnosis, revision: this.diagnoses.length });
-        return ok(`diagnosis #${this.diagnoses.length} recorded; write tools are now unlocked`);
+        // Models tend to assume a refused write went through. Say so plainly, once.
+        const refused = this.refusedBeforeGate;
+        this.refusedBeforeGate = 0;
+        const note =
+          refused > 0
+            ? ` Note: ${refused} write call(s) made before this diagnosis were refused and did not run; nothing has been changed yet.`
+            : '';
+        return ok(
+          `diagnosis #${this.diagnoses.length} recorded; write tools are now unlocked.${note}`,
+        );
       }
       case 'db_execute':
       case 'run_migration_sql': {

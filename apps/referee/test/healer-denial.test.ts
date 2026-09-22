@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MemorySink } from '../src/events.js';
 import { buildConfig } from '../src/healer/configs.js';
 import { fakeMessage, fakeText, fakeToolUse, scriptedModel } from '../src/healer/model.js';
-import { runHealer } from '../src/healer/runner.js';
+import { CONTINUE_PROMPT, runHealer } from '../src/healer/runner.js';
 import { HealerToolset, readSqlViolation, writeSqlViolation } from '../src/healer/tools.js';
 
 /**
@@ -48,6 +48,17 @@ describe('write gate and SQL filters', () => {
     expect(gate.isError).toBe(false);
     expect(tools.isUnlocked).toBe(true);
     expect(sink.events.map((e) => e.kind)).toContain('diagnosis');
+    // The model is told its earlier write never ran (it tends to assume it did).
+    expect(gate.content).toMatch(/1 write call\(s\) made before this diagnosis were refused/);
+
+    const again = await tools.execute('submit_diagnosis', {
+      component: 'notes select policy',
+      mechanism: 'policy denies all rows',
+      affected: ['P2'],
+      confidence: 0.9,
+      reasoning: 'revised',
+    });
+    expect(again.content).not.toMatch(/refused/);
   });
 
   it('denies truncate, DML, other schemas and dangerous calls even after the gate', async () => {
@@ -138,6 +149,43 @@ describe('write gate and SQL filters', () => {
 });
 
 describe('runner with a scripted model', () => {
+  it('asks once to continue when a turn has no tool call, then ends on the second', async () => {
+    const sink = new MemorySink();
+    const tools = makeToolset(sink);
+    const seen: string[] = [];
+    let oracleCalls = 0;
+    const script = scriptedModel([
+      fakeMessage([fakeText("Let's run probe.")], 'end_turn'),
+      fakeMessage([fakeToolUse('probe_status', {})]),
+      fakeMessage([fakeText('Nothing else to try.')], 'end_turn'),
+    ]);
+    const model = {
+      model: 'scripted',
+      create: async (turn: Parameters<typeof script.create>[0]) => {
+        const last = turn.messages.at(-1);
+        if (last && typeof last.content === 'string') seen.push(last.content);
+        return script.create(turn);
+      },
+    };
+    const result = await runHealer({
+      config: buildConfig('H3'),
+      model,
+      toolset: tools,
+      sink,
+      initialProbes: RED,
+      oracle: async () => {
+        oracleCalls++;
+        return { healed: false, greenStreak: 0, artifacts: {}, reason: 'probes_red' };
+      },
+    });
+    // The prompt is sent exactly once, and before any oracle call, so it reveals nothing.
+    expect(seen.filter((c) => c === CONTINUE_PROMPT)).toHaveLength(1);
+    expect(result.toolCalls).toBe(1);
+    expect(result.turns).toBe(3);
+    expect(result.outcome).toBe('gave_up');
+    expect(oracleCalls).toBe(2);
+  });
+
   it('records the denial and ends when the model stops calling tools', async () => {
     const sink = new MemorySink();
     const tools = makeToolset(sink);

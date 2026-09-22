@@ -43,3 +43,12 @@ These were hit by the referee, not the healer, and are recorded in `INSFORGE_NOT
 - **Outcome:** the healer fixed the deny-all select policy with `ALTER POLICY`, probes stayed red because `SELECT` was also revoked; the round then hung on a provider request for 12 minutes and was invalidated by a restart
 - **What was actually wrong:** select policy `USING (false)` **and** `REVOKE SELECT ON notes FROM authenticated`
 - **What it exposed:** model calls had no per-request timeout and the wall clock was only checked between turns; both fixed
+
+### F07 Vanished RPC · H2 · gpt-oss-120b, then gpt-oss-20b · round c537222f: believed a refused write had run
+
+- **Outcome:** unhealed (`gave_up` after 9 tool calls, about 3 minutes); judge 9/9 pass, time to diagnosis 59 s
+- **What the healer diagnosed:** `public.note_count` function, "missing function definition in public schema" (correct)
+- **What was actually wrong:** `note_count()` was dropped; the fix is to recreate it as a security-invoker SQL function counting the caller's notes
+- **What happened:** after four read calls on `gpt-oss-120b`, the chain fell back to `gpt-oss-20b`. Its first action was `CREATE OR REPLACE FUNCTION public.note_count() …` before `submit_diagnosis`, which the gate refused. It then submitted a correct diagnosis and from that point reasoned as if the function existed ("We added function"), even after `db_functions` and a `pg_proc` query both showed it missing. Its last turn was the sentence "Let's run probe." with no tool call, which the runner read as the end of the run. The refused statement would also have failed on its own, because it filtered on `user_id` while the column is `owner_id`.
+- **What changed in the referee:** the `submit_diagnosis` result now states how many write calls were refused before it and that nothing has run. A turn with no tool call now gets one neutral prompt ("nothing ran; reply DONE or make the next call"). The referee sends it without consulting the oracle, so it reveals nothing about the victim. The run ends only on the second such turn.
+- **Upstream:** none

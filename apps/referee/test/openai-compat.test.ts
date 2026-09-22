@@ -78,6 +78,25 @@ describe('message conversion', () => {
     expect(msg.content.map((b) => b.type)).toEqual(['thinking', 'tool_use']);
     expect(msg.usage.input_tokens).toBe(5);
   });
+
+  it('keeps a reasoning-only turn as a valid assistant message', () => {
+    const chat = toChatMessages({
+      system: 'sys',
+      tools: [],
+      maxTokens: 10,
+      messages: [
+        { role: 'user', content: 'alert' },
+        {
+          role: 'assistant',
+          content: [{ type: 'thinking', thinking: "Let's run the probes.", signature: '' }],
+        },
+        { role: 'user', content: 'continue' },
+      ],
+    });
+    expect(chat.map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'user']);
+    expect(chat[2]?.content).toBe("Let's run the probes.");
+    expect(chat[2]?.tool_calls).toBeUndefined();
+  });
 });
 
 describe('quota fallback chain', () => {

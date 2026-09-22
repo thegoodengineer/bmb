@@ -75,9 +75,16 @@ export function toChatMessages(turn: ModelTurn): ChatMessage[] {
           type: 'function',
           function: { name: b.name, arguments: JSON.stringify(b.input ?? {}) },
         }));
+      // An assistant message needs content or tool calls. A reasoning-only turn (no reply,
+      // no call) keeps the tail of its own reasoning so the conversation stays valid.
+      const reasoning = m.content
+        .map((b) => (b.type === 'thinking' ? b.thinking : ''))
+        .filter(Boolean)
+        .join('\n')
+        .trim();
       out.push({
         role: 'assistant',
-        content: text || null,
+        content: text || (calls.length ? null : reasoning.slice(-300) || '(no reply)'),
         ...(calls.length ? { tool_calls: calls } : {}),
       });
       continue;

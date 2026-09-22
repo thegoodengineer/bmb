@@ -95,6 +95,10 @@ export function formatAlert(results: ProbeResult[]): string {
   return `Alert: the synthetic-user probe suite is red.\n\n${lines.join('\n')}\n\nInvestigate and repair. Call probe_status to see the current state at any time.`;
 }
 
+/** Sent at most once per run, whatever the victim's state. */
+export const CONTINUE_PROMPT =
+  'Your last reply contained no tool call, so nothing ran. If you are finished, reply with the single word DONE. Otherwise make the next tool call now.';
+
 export async function runHealer(opts: HealerRunOptions): Promise<HealerRunResult> {
   const { config, model, toolset, sink } = opts;
   const startedMs = Date.now();
@@ -108,6 +112,7 @@ export async function runHealer(opts: HealerRunOptions): Promise<HealerRunResult
   let tokensOut = 0;
   let turns = 0;
   let lastVerdict: OracleVerdict | undefined;
+  let continuePrompted = false;
 
   const finish = (outcome: HealerOutcome, error?: string): HealerRunResult => {
     const result: HealerRunResult = {
@@ -199,7 +204,15 @@ export async function runHealer(opts: HealerRunOptions): Promise<HealerRunResult
         messages.push({ role: 'user', content: 'Continue. Use one tool call per step.' });
         continue;
       }
-      // The model stopped calling tools: it believes it is done (or gave up).
+      // Some models end a turn on a sentence like "Let's run the probes." without emitting the
+      // call. Ask once, neutrally and without consulting the oracle (so the prompt itself says
+      // nothing about the victim's state), whether that was the end.
+      if (!continuePrompted) {
+        continuePrompted = true;
+        messages.push({ role: 'user', content: CONTINUE_PROMPT });
+        continue;
+      }
+      // The model stopped calling tools twice: it believes it is done (or gave up).
       lastVerdict = await opts.oracle();
       return finish(lastVerdict.healed ? 'healed' : 'gave_up');
     }

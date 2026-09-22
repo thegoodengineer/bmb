@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { PublicEvent, PublicRound } from '@/lib/control';
 import { fmtMs, fmtTime } from '@/lib/format';
+import { collapseProbes } from '@/lib/heal-log';
 
 interface Props {
   round: PublicRound | undefined;
@@ -78,7 +79,7 @@ function label(e: PublicEvent): { text: string; cls: string; detail?: string | u
   }
 }
 
-function Line({ e }: { e: PublicEvent }) {
+function Line({ e, repeats = 1 }: { e: PublicEvent; repeats?: number }) {
   const [open, setOpen] = useState(false);
   const l = label(e);
   return (
@@ -90,7 +91,10 @@ function Line({ e }: { e: PublicEvent }) {
         disabled={!l.detail}
       >
         <span className="shrink-0 text-fg-dim/60">{fmtTime(e.at)}</span>
-        <span className={`min-w-0 flex-1 whitespace-pre-wrap break-words ${l.cls}`}>{l.text}</span>
+        <span className={`min-w-0 flex-1 whitespace-pre-wrap break-words ${l.cls}`}>
+          {l.text}
+          {repeats > 1 && <span className="text-fg-dim/50"> ×{repeats}</span>}
+        </span>
         {l.detail && <span className="shrink-0 text-fg-dim/50">{open ? '▾' : '▸'}</span>}
       </button>
       {open && l.detail && (
@@ -129,8 +133,8 @@ export function HealLog({ round, events, previous, live }: Props) {
             <RoundHeader round={round} />
             <div className="mt-2">
               {events.length === 0 && <p className="text-fg-dim/60">waiting for the referee…</p>}
-              {events.map((e) => (
-                <Line key={e.id} e={e} />
+              {collapseProbes(events).map((r) => (
+                <Line key={r.e.id} e={r.e} repeats={r.repeats} />
               ))}
             </div>
           </>
@@ -154,8 +158,8 @@ export function HealLog({ round, events, previous, live }: Props) {
           </button>
           {showPrev && (
             <div className="mt-2">
-              {previous.events.map((e) => (
-                <Line key={e.id} e={e} />
+              {collapseProbes(previous.events).map((r) => (
+                <Line key={r.e.id} e={r.e} repeats={r.repeats} />
               ))}
             </div>
           )}

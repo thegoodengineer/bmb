@@ -50,6 +50,9 @@ let counter = 0;
 /** Retry-After above this is treated as a spent quota, not a burst limit. */
 const MAX_RETRY_AFTER_S = 90;
 
+/** Per-attempt HTTP timeout. */
+const REQUEST_TIMEOUT_MS = 90_000;
+
 function blockText(block: Anthropic.ContentBlockParam | Anthropic.ContentBlock): string {
   if (block.type === 'text') return block.text;
   return '';
@@ -175,16 +178,31 @@ export async function chatCompletion(
   let attempt = 0;
   while (true) {
     attempt++;
-    const res = await fetch(`${opts.baseUrl.replace(/\/$/, '')}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${opts.apiKey}`,
-        'Content-Type': 'application/json',
-        ...(opts.headers ?? {}),
-      },
-      body: JSON.stringify({ model: opts.model, ...body }),
-    });
-    const text = await res.text();
+    let res: Response;
+    let text: string;
+    try {
+      res = await fetch(`${opts.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${opts.apiKey}`,
+          'Content-Type': 'application/json',
+          ...(opts.headers ?? {}),
+        },
+        body: JSON.stringify({ model: opts.model, ...body }),
+        // A hung connection must never freeze the referee.
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      text = await res.text();
+    } catch (e) {
+      if (attempt > maxRetries) {
+        throw new OpenAICompatError(
+          `${opts.label ?? 'llm'} request failed: ${e instanceof Error ? e.message : String(e)}`,
+          0,
+        );
+      }
+      await new Promise((r) => setTimeout(r, Math.min(30_000, 2000 * 2 ** attempt)));
+      continue;
+    }
     if (res.ok) {
       const json = JSON.parse(text) as ChatResponse;
       if (json.error) throw new OpenAICompatError(errorText(json.error), res.status);

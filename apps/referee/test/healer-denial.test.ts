@@ -153,6 +153,22 @@ describe('runner with a scripted model', () => {
     expect(result.toolCalls).toBe(5);
   });
 
+  it('ends at the wall clock even when a model call never returns', async () => {
+    const sink = new MemorySink();
+    const hung = { model: 'hung', create: () => new Promise<never>(() => {}) };
+    const started = Date.now();
+    const result = await runHealer({
+      config: { ...buildConfig('H3'), maxWallClockMs: 300 },
+      model: hung,
+      toolset: makeToolset(sink),
+      sink,
+      initialProbes: RED,
+      oracle: async () => ({ healed: false, greenStreak: 0, artifacts: {}, reason: 'probes_red' }),
+    });
+    expect(result.outcome).toBe('budget_time');
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
   it('H1 restricts the tool list and per-tool caps', async () => {
     const sink = new MemorySink();
     const cfg = buildConfig('H1');

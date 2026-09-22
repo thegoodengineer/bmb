@@ -77,6 +77,17 @@ export function pruneHistory(
   });
 }
 
+export class DeadlineError extends Error {}
+
+/** Resolve with `p`, or reject with DeadlineError after `ms`. */
+export function withDeadline<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new DeadlineError(`deadline after ${ms}ms`)), ms);
+  });
+  return Promise.race([p, deadline]).finally(() => clearTimeout(timer));
+}
+
 export function formatAlert(results: ProbeResult[]): string {
   const lines = results.map(
     (r) => `${r.name} ${r.ok ? 'ok' : 'FAIL'} ${r.ms}ms${r.error ? ` — ${r.error}` : ''}`,
@@ -128,16 +139,23 @@ export async function runHealer(opts: HealerRunOptions): Promise<HealerRunResult
     let response: Anthropic.Message;
     turns++;
     const keep = opts.liveToolResults ?? 4;
+    // The wall clock is enforced during a model call too, not only between turns: a slow or
+    // rate-limited provider must not hold the round (and the public queue) past its budget.
+    const remainingMs = Math.max(1, config.maxWallClockMs - (Date.now() - startedMs));
     const call = (live: number) =>
-      model.create({
-        system: config.systemPrompt,
-        messages: pruneHistory(messages, live),
-        tools: toolset.definitions,
-        maxTokens: opts.maxTokensPerTurn ?? 4096,
-      });
+      withDeadline(
+        model.create({
+          system: config.systemPrompt,
+          messages: pruneHistory(messages, live),
+          tools: toolset.definitions,
+          maxTokens: opts.maxTokensPerTurn ?? 4096,
+        }),
+        remainingMs,
+      );
     try {
       response = await call(keep);
     } catch (e) {
+      if (e instanceof DeadlineError) return finish('budget_time');
       // Request too large (free-tier token caps): keep only the newest result and retry once.
       const status = (e as { status?: number }).status;
       if (status === 413 && keep > 1) {

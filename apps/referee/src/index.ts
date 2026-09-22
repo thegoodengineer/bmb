@@ -119,6 +119,14 @@ async function main(): Promise<void> {
       sink: {
         record: async (kind, payload) => {
           await sink.record(kind, payload);
+          // First red probe after injection: the round is under attack.
+          if (kind === 'probe' && payload.green === false && statusPushed === 'injecting') {
+            statusPushed = 'attacked';
+            await control
+              .setStatus(row.id, 'attacked', { attacked_at: new Date().toISOString() })
+              .catch(() => {});
+            return;
+          }
           // Mirror lifecycle transitions onto the round row so the status pill is live.
           const transition =
             kind === 'attack'

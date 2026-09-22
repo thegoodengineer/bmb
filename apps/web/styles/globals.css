@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+/* Design tokens (SPEC.md §9.1). Gold is for the active state and the wall of fame only. */
+:root {
+  --bg: #0b1120;
+  --bg-2: #111a2e;
+  --line: #1e2a44;
+  --fg: #e6e9f0;
+  --fg-dim: #8b95ad;
+  --gold: #d4af37;
+  --gold-dim: #9c8228;
+  --red: #e5484d;
+  --green: #46a758;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-ui: "Inter", system-ui, sans-serif;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-2: var(--bg-2);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-fg-dim: var(--fg-dim);
+  --color-gold: var(--gold);
+  --color-gold-dim: var(--gold-dim);
+  --color-red: var(--red);
+  --color-green: var(--green);
+  --font-mono: var(--font-mono);
+  --font-ui: var(--font-ui);
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-ui);
+}

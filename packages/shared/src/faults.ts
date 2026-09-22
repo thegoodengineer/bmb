@@ -276,6 +276,19 @@ const combos: Fault[] = [
       scope: ['P2', 'P6'],
     },
   },
+  {
+    id: 'C05',
+    tier: 'combo',
+    name: 'Double Silence',
+    blurb: 'Two things are subtly wrong. Neither screams.',
+    points: COMBO_POINTS,
+    composedOf: ['F09', 'F10'],
+    groundTruth: {
+      component: 'database function note_count() body AND notes table trigger notes_touch',
+      mechanism: 'predicate flipped to owner_id <> auth.uid(); BEFORE UPDATE trigger dropped',
+      scope: ['P4', 'P6'],
+    },
+  },
 ];
 
 export const FAULTS: readonly Fault[] = [...singles, ...decoys, ...combos];

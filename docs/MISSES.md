@@ -52,3 +52,17 @@ These were hit by the referee, not the healer, and are recorded in `INSFORGE_NOT
 - **What happened:** after four read calls on `gpt-oss-120b`, the chain fell back to `gpt-oss-20b`. Its first action was `CREATE OR REPLACE FUNCTION public.note_count() …` before `submit_diagnosis`, which the gate refused. It then submitted a correct diagnosis and from that point reasoned as if the function existed ("We added function"), even after `db_functions` and a `pg_proc` query both showed it missing. Its last turn was the sentence "Let's run probe." with no tool call, which the runner read as the end of the run. The refused statement would also have failed on its own, because it filtered on `user_id` while the column is `owner_id`.
 - **What changed in the referee:** the `submit_diagnosis` result now states how many write calls were refused before it and that nothing has run. A turn with no tool call now gets one neutral prompt ("nothing ran; reply DONE or make the next call"). The referee sends it without consulting the oracle, so it reveals nothing about the victim. The run ends only on the second such turn.
 - **Upstream:** none
+
+### F08 Impossible Rule · H2 · gpt-oss-20b · self-play round c3bc6582: a correct repair scored as unhealed (referee bug)
+
+- **Outcome as recorded:** unhealed (`artifact_present`) with judge 9/9 pass. **Reclassified** as healed, with time to mitigation 111 s.
+- **What the healer did:** read the constraint with `pg_get_constraintdef`, diagnosed the inverted `CHECK (length(title) < 1)`, dropped it and re-added `notes_title_impossible CHECK (length(title) > 0)` under the same name. All six probes stayed green for 12 cycles.
+- **What it exposed in the referee:** the F08 artifact check treated *any* CHECK constraint on `notes` as the fault, so a sane replacement read as the fault still present. The check now matches the injected rule itself (a title shorter than one character) under any name. The reset drops every CHECK constraint on `notes`, since the baseline has none. The integration suite replays this repair.
+- **Upstream:** none; referee bug, fixed in this repo
+
+### F06 Poison Pill · H2 · gpt-oss-120b, then gpt-oss-20b · self-play round 499c6a31: lost the thread after a model fallback
+
+- **Outcome as recorded:** invalid (`provider_error: deadline after 35506ms`). **Reclassified** as unhealed (`budget_time`), with judge 0/9 because no diagnosis was submitted.
+- **What happened:** `gpt-oss-120b` called `db_triggers` and received `notes_block` (a `BEFORE INSERT` trigger calling `bmb_block()`). On the next turn the chain fell back to `gpt-oss-20b`, which returned to the insert policy and looped for eight minutes over `db_policies` (four calls), the column list (three calls) and the logs (five calls). It never submitted a diagnosis.
+- **What it exposed in the referee:** the last model call hit a request-too-large error, and its retry ran into the round's wall clock. A deadline inside that retry was reported as a provider error, which marks a round invalid. It is now a time-budget stop like any other deadline.
+- **Upstream:** none
